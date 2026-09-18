@@ -34,6 +34,7 @@
 
 - **读（Enforce）**：`atomic.Pointer.Load()` 取得当前不可变快照后**全程无锁**遍历，零竞争，天然协程安全；遍历期间数据不可能被修改。
 - **写（增删改绑定）**：`sync.Mutex` 串行化「复制当前快照 → 在副本上修改 → 构建新快照 → 原子替换」。写成本 O(N)，因低频可接受。
+- **COW 必须深拷贝 Binding，不能只拷外壳**：复制快照时若只拷 `map`/`slice` 容器、而内部仍与旧快照共享同一个 `*Binding` 指针，则后续 `SetEnabled` / 修改 `Conditions` 会**直接改到读者手里的旧快照**，COW 失效，且因读者并未并发写、`-race` 也不一定能抓到。规定：每次写**复制受影响的 `Binding` 值**（按值深拷贝其字段，`Conditions` 切片需另起底层数组），或对整表做深拷贝；`Condition` 一经构建**视为不可变**，需变更则替换为新值而非原地改。
 
 被否决的方案：
 - 方案 A（RWMutex + 邻接表）：实现最简单，但写锁阻塞所有读，海量并发读下读锁原子计数仍有 cache line 争用。作为 fallback 保留。
@@ -41,7 +42,8 @@
 
 ### 数据模型决策
 
-- **绑定边为 pairwise（资源A ↔ 资源B）**，非 N 元边（user+role+permission 三元组）。理由：N 元边导致数据爆炸、丧失复用、维护困难，且违背资源类型无关原则。三元授权在引擎中表现为两条 pairwise 边组成的路径。
+- **绑定边为有向 pairwise（资源A → 资源B，即 `Src → Dst`）**，非 N 元边（user+role+permission 三元组）。理由：N 元边导致数据爆炸、丧失复用、维护困难，且违背资源类型无关原则。三元授权在引擎中表现为两条 pairwise 边组成的路径。
+- **边有方向，遍历只沿出边（`Src → Dst`）进行**。引擎**不推导对称/反向关系**：`A → B` 成立不代表 `B → A` 成立。若业务需要反向授权，**必须显式再写一条 `B → A` 的边**。"user↔role" 这类双向直觉在本引擎中不存在，写入方需自行补齐反向边。
 - **资源无 type 字段**。"user+role" / "role+permission" 仅为写入方的人类心智模型，引擎一视同仁。
 - **Conditions 与 Scenario 是任意绑定边的通用可选属性**，引擎不强制哪种属性挂哪种边（满足"两种边都可配时间和场景"）。
 - **绑定唯一标识 = 自然键 `(Src, Dst, Scenario)`**。同一对资源同一场景下只存在一条 Binding，其多个 TIME 条件收入 `Conditions` 列表。无独立 ID。
@@ -111,6 +113,7 @@ type Engine struct {
 
 - 起点含、终点不含。与 spec 措辞"截止到 end_time **之前**"一致，亦为工业惯例（相邻时段无缝衔接、不重叠；时长恰为 `end - start`）。
 - 时间以**绝对时刻**比较（`time.Time` 时区无关），序列化用 **RFC3339 带偏移**。
+- **"含结束日" 必须写成次日零点**：因终点不含（`Now < end`），运营直觉里的"截止当天 `23:59:59`"在那一刻**其实已不生效**。要表达"有效期含结束日 D 全天"，右端点须写成 **D 的次日 `00:00:00`**（开区间右端点），而非 `D 23:59:59`。
 
 ### 4.2 条件组合（evalConditions）
 
@@ -126,6 +129,16 @@ type Engine struct {
 ### 4.4 停用
 
 `Enabled == false` 的边在 enforce 遍历时跳过，但仍保留在快照中（便于重新启用、序列化时保留状态）。
+
+### 4.5 身份相等（`subject == target`）语义 —— 短路成功
+
+**决策：`Enforce(x, x)` 恒为 `true`。** dfs 入口即判断 `cur == target`，命中直接返回，因此当 `subject == target` 时**无需任何边、不校验自环、不看场景/时间**即放行。
+
+- **适用语义**："主体是否拥有对自身的权限" 在绝大多数 RBAC 场景下应为真（用户天然支配自己），短路成功符合直觉，也省去为每个主体补自环边。
+- **风险边界**：对 "资源是否给自己授权" 这类需要显式凭据的场景，短路会**意外放行**。若某业务把 `Enforce(x, x)` 当作 "是否存在一条 x→x 的有效授权边" 来判断，本语义与其不符。
+- **如需改为 "必须存在显式自环边才放行"**：删除 dfs 入口的 `cur == target` 短路，改为只有当遍历经由一条满足 `Enabled / scenario / conditions` 的自环边（`Src == Dst == x`）回到 target 时才成功。该改动会令所有 `Enforce(x, x)` 默认拒绝，须同步评估对上层调用的影响。
+
+> 该短路是**有意为之的产品语义**，非 bug；调用方不得依赖 `Enforce(x, x)` 来判断自环边的存在性或有效性。
 
 ## 5. enforce 遍历算法
 
@@ -159,6 +172,12 @@ func (e *Engine) dfs(snap *snapshot, cur, target string, ctx *EvalContext,
 - **环保护双保险**：路径栈 `onPath`（进入置位、回溯清除）+ `maxDepth` 上限。采用**路径栈判环**而非全局 visited，正确性优先——全局 visited 会漏掉需重访节点的有效路径。
 - **默认拒绝**：空快照、subject/target 不存在均安全返回 `false`。
 - **Enforce 永不返回 error**，只返回 `bool`（安全系统的正确默认）。
+- **复杂度警示：路径栈判环在 DAG 上可能指数爆炸**。相对全局 visited，路径栈能避免漏掉需重访节点的有效路径（正确性更好），但代价是**菱形 / 网格状图会退化为"枚举所有简单路径"**。一旦权限图不是浅树而是宽密 DAG，Enforce 可能打满 `maxDepth` 或打爆 CPU。
+  - **预期图形态**：典型深度 **2–4**、**低扇出**的浅树（如 `user → role → permission`）。本算法的正确性与性能均以此为前提。
+  - **超出该形态时的降级手段**（按需引入，非默认）：
+    - 对到达过的 `(node, 剩余条件/场景的抽象签名)` 做**记忆化**，剪掉重复子问题（注意：条件/场景随路径变化时不可简单按 node 记忆化，须把影响求值的状态并入 key，否则会漏路径）。
+    - 为单次 Enforce 设**硬超时 / 访问节点数上限**，超限按"默认拒绝"返回并告警。
+  - **`maxDepth=32` 不只是防环，也是复杂度保险丝**：它限制了单条路径长度，从而约束最坏情况下的路径枚举规模；调大该值会同时放大指数爆炸风险，须谨慎。
 
 ## 6. 序列化格式（Casbin 风格）
 
@@ -179,7 +198,7 @@ b, <src>, <dst>, <scenario>, <enabled>, <conditions>
 # rbac-policy v1
 b, user1, role1, , 1, TIME:2026-01-01T00:00:00+08:00~
 b, role1, perm1, VIP1, 1, ALL
-b, role1, perm2, VIP2, 0, TIME:~2026-12-31T23:59:59+08:00;TIME:2027-06-01T00:00:00+08:00~2027-06-30T00:00:00+08:00
+b, role1, perm2, VIP2, 0, TIME:~2027-01-01T00:00:00+08:00;TIME:2027-06-01T00:00:00+08:00~2027-07-01T00:00:00+08:00
 b, user2, role1, , 1, ALL
 ```
 
@@ -222,11 +241,11 @@ var (
 自然键重复的语义通过两个显式 API 区分，避免误操作：
 
 - `AddBinding(b Binding) error`：自然键 `(Src,Dst,Scenario)` 已存在 → 返回 `ErrDuplicateBinding`。
-- `UpdateBinding(b Binding) error`：按自然键覆盖（upsert）；不存在则返回 `ErrBindingNotFound`。
+- `UpdateBinding(b Binding) error`：**仅更新（update-only）**，按自然键 `(Src,Dst,Scenario)` 定位已存在的绑定并覆盖其可变字段（`Conditions` / `Enabled`）；自然键不存在则返回 `ErrBindingNotFound`，**绝不插入新边**（插入是 `AddBinding` 的职责）。
 - `RemoveBinding(src, dst, scenario string) error`
 - `SetEnabled(src, dst, scenario string, enabled bool) error`：按自然键启停；定位失败返回 `ErrBindingNotFound`。
 
-所有写操作内部走 COW：复制快照 → 改副本 → 原子替换。
+所有写操作内部走 COW：复制快照 → 改副本 → 原子替换。**复制时须深拷贝受影响的 `Binding` 值（详见 §2 并发模型的 COW 深拷贝约束），不得与旧快照共享 `*Binding` 指针。**
 
 ## 9. 测试策略
 
