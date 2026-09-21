@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	EnvConfig       = "RBAC_CONFIG"
-	EnvPolicyKey    = "RBAC_POLICY_KEY"
-	DefaultFileName = "config.yaml"
+	EnvConfig        = "RBAC_CONFIG"
+	EnvPolicyKey     = "RBAC_POLICY_KEY"
+	EnvPolicyKeyPrev = "RBAC_POLICY_KEY_PREV"
+	DefaultFileName  = "config.yaml"
 )
 
 // Origin is how the config file path was chosen.
@@ -60,6 +61,18 @@ func (c *Config) Algorithm() (crypto.Algorithm, error) {
 
 func (c *Config) KeyBytes() []byte {
 	return append([]byte(nil), c.key...)
+}
+
+func (c *Config) PrevKeyBytes() []byte {
+	s := strings.TrimSpace(os.Getenv(EnvPolicyKeyPrev))
+	if s == "" {
+		return nil
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 func ResolvePath(flagPath string) (path string, origin Origin) {

@@ -2,7 +2,7 @@
 # Default lookup: <working directory>/config.yaml
 # policy.dir is the directory only; the filename is always policy.rbac.
 # policy.encrypt is empty by default; first start writes false.
-# policy.crypto is empty by default; first start writes aes-256-gcm.
+# policy.crypto is empty by default; first start writes aes-256-gcm (also aes-128-gcm, sm4).
 # policy.key is hex. Generated on first start when encrypt is true and key is empty.
 # RBAC_POLICY_KEY overrides policy.key and is not written to this file.
 

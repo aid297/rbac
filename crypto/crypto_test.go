@@ -7,7 +7,7 @@ import (
 
 func TestRoundTrip(t *testing.T) {
 	plain := []byte("# rbac-policy v1\nb, u, r, , 1, ALL\n")
-	for _, name := range []string{NameAES256GCM, NameAES128GCM} {
+	for _, name := range []string{NameAES256GCM, NameAES128GCM, NameSM4} {
 		t.Run(name, func(t *testing.T) {
 			alg, err := Lookup(name)
 			if err != nil {

@@ -27,11 +27,15 @@ func main() {
 
 	var store *persist.Store
 	if cfg.EncryptEnabled() && os.Getenv("RBAC_DEBUG") != "1" {
-		store, err = persist.OpenWith(cfg.PolicyPath(), alg, cfg.KeyBytes())
+		store, err = persist.OpenWithPrev(cfg.PolicyPath(), alg, cfg.KeyBytes(), cfg.PrevKeyBytes())
 	} else {
-		store, err = persist.Open(cfg.PolicyPath())
+		store, err = persist.OpenWithPrev(cfg.PolicyPath(), nil, cfg.KeyBytes(), cfg.PrevKeyBytes())
 	}
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	if err := store.Reconcile(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}

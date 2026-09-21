@@ -32,11 +32,12 @@ func FilePath(dir string) string {
 // Store is a file-backed policy engine. Memory is the query path; the file is
 // the durable copy. Path is the full file path (directory + DefaultFile).
 type Store struct {
-	path   string
-	eng    *policy.Engine
-	cipher crypto.Algorithm
-	key    []byte
-	mu     sync.Mutex
+	path    string
+	eng     *policy.Engine
+	cipher  crypto.Algorithm
+	key     []byte
+	prevKey []byte
+	mu      sync.Mutex
 }
 
 func Open(path string) (*Store, error) {
@@ -44,6 +45,10 @@ func Open(path string) (*Store, error) {
 }
 
 func OpenWith(path string, alg crypto.Algorithm, key []byte) (*Store, error) {
+	return OpenWithPrev(path, alg, key, prevKeyFromEnv())
+}
+
+func OpenWithPrev(path string, alg crypto.Algorithm, key, prev []byte) (*Store, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
@@ -51,6 +56,7 @@ func OpenWith(path string, alg crypto.Algorithm, key []byte) (*Store, error) {
 	s.path = path
 	s.cipher = alg
 	s.key = append([]byte(nil), key...)
+	s.prevKey = append([]byte(nil), prev...)
 	s.eng = policy.NewEngine()
 	if err := s.loadLocked(); err != nil {
 		return nil, err
@@ -127,16 +133,9 @@ func (s *Store) loadLocked() error {
 		}
 		return fmt.Errorf("persist: read %s: %w", s.path, err)
 	}
-	plain := data
-	if crypto.IsSealed(data) {
-		if len(s.key) == 0 {
-			return fmt.Errorf("persist: encrypted %s requires a key", s.path)
-		}
-		pt, err := crypto.Open(s.key, data)
-		if err != nil {
-			return fmt.Errorf("persist: decrypt %s: %w", s.path, err)
-		}
-		plain = pt
+	plain, err := s.openBlob(data)
+	if err != nil {
+		return fmt.Errorf("persist: decrypt %s: %w", s.path, err)
 	}
 	eng := policy.NewEngine()
 	if err := eng.Load(string(plain)); err != nil {

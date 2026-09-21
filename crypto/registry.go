@@ -12,6 +12,7 @@ import (
 const (
 	NameAES256GCM = "aes-256-gcm"
 	NameAES128GCM = "aes-128-gcm"
+	NameSM4       = "sm4"
 	DefaultName   = NameAES256GCM
 
 	encHeader = "# rbac-enc v1\n"
@@ -97,22 +98,35 @@ func Seal(alg Algorithm, key, plaintext []byte) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
+func EnvelopeAlg(wrapped []byte) (string, error) {
+	_, name, _, err := splitEnvelope(wrapped)
+	return name, err
+}
+
 func Open(key, wrapped []byte) ([]byte, error) {
+	alg, _, payload, err := splitEnvelope(wrapped)
+	if err != nil {
+		return nil, err
+	}
+	return alg.Decrypt(key, payload)
+}
+
+func splitEnvelope(wrapped []byte) (Algorithm, string, []byte, error) {
 	if !IsSealed(wrapped) {
-		return nil, ErrEnvelope
+		return nil, "", nil, ErrEnvelope
 	}
 	body := string(wrapped[len(encHeader):])
 	algName, rest, ok := strings.Cut(strings.TrimSpace(body), "\n")
 	if !ok || algName == "" || rest == "" {
-		return nil, ErrEnvelope
+		return nil, "", nil, ErrEnvelope
 	}
 	alg, err := Lookup(algName)
 	if err != nil {
-		return nil, err
+		return nil, "", nil, err
 	}
 	payload, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rest))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrEnvelope, err)
+		return nil, "", nil, fmt.Errorf("%w: %v", ErrEnvelope, err)
 	}
-	return alg.Decrypt(key, payload)
+	return alg, algName, payload, nil
 }
