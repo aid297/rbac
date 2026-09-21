@@ -12,6 +12,7 @@ import (
 
 	"rbac/crypto"
 	"rbac/persist"
+	"rbac/pki"
 )
 
 const (
@@ -37,7 +38,12 @@ type Config struct {
 	// Origin is env, flag, or default.
 	Origin Origin `mapstructure:"-"`
 	Policy Policy `mapstructure:"policy"`
+	CA     CA     `mapstructure:"ca"`
 	key    []byte
+}
+
+type CA struct {
+	Dir string `mapstructure:"dir"`
 }
 
 type Policy struct {
@@ -49,6 +55,13 @@ type Policy struct {
 
 func (c *Config) EncryptEnabled() bool {
 	return c != nil && c.Policy.Encrypt != nil && *c.Policy.Encrypt
+}
+
+func (c *Config) CADir() string {
+	if c == nil || strings.TrimSpace(c.CA.Dir) == "" {
+		return pki.DefaultDir
+	}
+	return c.CA.Dir
 }
 
 func (c *Config) PolicyPath() string {
@@ -114,11 +127,13 @@ func Load(flagPath string) (*Config, error) {
 	v.SetConfigFile(path)
 	v.SetConfigType("yaml")
 	v.SetDefault("policy.dir", persist.DefaultDir)
+	v.SetDefault("ca.dir", pki.DefaultDir)
 
 	cfg := &Config{
 		Path:   path,
 		Origin: origin,
 		Policy: Policy{Dir: persist.DefaultDir},
+		CA:     CA{Dir: pki.DefaultDir},
 	}
 
 	if err := v.ReadInConfig(); err != nil {
@@ -134,6 +149,9 @@ func Load(flagPath string) (*Config, error) {
 		if strings.TrimSpace(cfg.Policy.Dir) == "" {
 			cfg.Policy.Dir = persist.DefaultDir
 		}
+		if strings.TrimSpace(cfg.CA.Dir) == "" {
+			cfg.CA.Dir = pki.DefaultDir
+		}
 	}
 
 	if err := cfg.ensureSecrets(); err != nil {
@@ -144,6 +162,10 @@ func Load(flagPath string) (*Config, error) {
 
 func (c *Config) ensureSecrets() error {
 	dirty := false
+	if strings.TrimSpace(c.CA.Dir) == "" {
+		c.CA.Dir = pki.DefaultDir
+		dirty = true
+	}
 	if c.Policy.Encrypt == nil {
 		off := false
 		c.Policy.Encrypt = &off
@@ -214,8 +236,8 @@ func parseKey(s string, want int) ([]byte, error) {
 }
 
 func (c *Config) writeFile() error {
-	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\n",
-		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key)
+	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\n",
+		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key, c.CADir())
 	dir := filepath.Dir(c.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("config: mkdir: %w", err)

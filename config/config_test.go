@@ -79,6 +79,9 @@ func TestMissingDefaultUsesBuiltins(t *testing.T) {
 	if cfg.PolicyPath() != persist.DefaultPath() {
 		t.Fatalf("PolicyPath=%s", cfg.PolicyPath())
 	}
+	if cfg.CADir() != "secret" {
+		t.Fatalf("CADir=%s", cfg.CADir())
+	}
 	if _, err := os.Stat(cfg.Path); err != nil {
 		t.Fatal("expected generated config.yaml")
 	}
@@ -105,13 +108,16 @@ func TestEmptyPolicyDirFallsBack(t *testing.T) {
 	t.Chdir(dir)
 	t.Setenv(EnvConfig, "")
 	t.Setenv(EnvPolicyKey, "")
-	mustWrite(t, filepath.Join(dir, DefaultFileName), "policy:\n  dir: \"\"\n")
+	mustWrite(t, filepath.Join(dir, DefaultFileName), "policy:\n  dir: \"\"\nca:\n  dir: \"\"\n")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Policy.Dir != persist.DefaultDir {
 		t.Fatalf("dir=%s", cfg.Policy.Dir)
+	}
+	if cfg.CADir() != "secret" {
+		t.Fatalf("CADir=%s", cfg.CADir())
 	}
 }
 

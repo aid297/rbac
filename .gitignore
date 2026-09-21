@@ -22,8 +22,9 @@ go.work.sum
 .env
 .env.local
 
-# Runtime policy file (path later comes from viper)
+# Runtime policy and CA material
 stats/
+secret/
 
 # macOS
 .DS_Store

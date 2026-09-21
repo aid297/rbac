@@ -7,6 +7,7 @@ import (
 
 	"rbac/config"
 	"rbac/persist"
+	"rbac/pki"
 )
 
 func main() {
@@ -40,6 +41,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("config_file=%s origin=%s policy_dir=%s encrypt=%t crypto=%s policy_file=%s bindings=%d\n",
-		cfg.Path, cfg.Origin, cfg.Policy.Dir, cfg.EncryptEnabled(), cfg.Policy.Crypto, store.Path(), len(store.ListBindings()))
+	if _, err := pki.Ensure(cfg.CADir()); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("config_file=%s origin=%s policy_dir=%s encrypt=%t crypto=%s policy_file=%s ca_dir=%s bindings=%d\n",
+		cfg.Path, cfg.Origin, cfg.Policy.Dir, cfg.EncryptEnabled(), cfg.Policy.Crypto, store.Path(), cfg.CADir(), len(store.ListBindings()))
 }
