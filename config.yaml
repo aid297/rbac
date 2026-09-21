@@ -1,0 +1,6 @@
+# RBAC service config. Override path with RBAC_CONFIG, then --config.
+# Default lookup: <working directory>/config.yaml
+# policy.dir is the directory only; the filename is always policy.rbac.
+
+policy:
+  dir: stats

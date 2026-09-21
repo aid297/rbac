@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-rbac
+/rbac
 
 # Test binary and coverage output
 *.test
@@ -21,6 +21,9 @@ go.work.sum
 # Environment files
 .env
 .env.local
+
+# Runtime policy file (path later comes from viper)
+stats/
 
 # macOS
 .DS_Store
