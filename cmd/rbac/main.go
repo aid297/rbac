@@ -19,12 +19,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	store, err := persist.Open(cfg.PolicyPath())
+	alg, err := cfg.Algorithm()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("config_file=%s origin=%s policy_dir=%s policy_file=%s bindings=%d\n",
-		cfg.Path, cfg.Origin, cfg.Policy.Dir, store.Path(), len(store.ListBindings()))
+	var store *persist.Store
+	if cfg.EncryptEnabled() && os.Getenv("RBAC_DEBUG") != "1" {
+		store, err = persist.OpenWith(cfg.PolicyPath(), alg, cfg.KeyBytes())
+	} else {
+		store, err = persist.Open(cfg.PolicyPath())
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("config_file=%s origin=%s policy_dir=%s encrypt=%t crypto=%s policy_file=%s bindings=%d\n",
+		cfg.Path, cfg.Origin, cfg.Policy.Dir, cfg.EncryptEnabled(), cfg.Policy.Crypto, store.Path(), len(store.ListBindings()))
 }

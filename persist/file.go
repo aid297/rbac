@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"rbac/crypto"
 	"rbac/policy"
 )
 
@@ -31,17 +32,25 @@ func FilePath(dir string) string {
 // Store is a file-backed policy engine. Memory is the query path; the file is
 // the durable copy. Path is the full file path (directory + DefaultFile).
 type Store struct {
-	path string
-	eng  *policy.Engine
-	mu   sync.Mutex
+	path   string
+	eng    *policy.Engine
+	cipher crypto.Algorithm
+	key    []byte
+	mu     sync.Mutex
 }
 
 func Open(path string) (*Store, error) {
+	return OpenWith(path, nil, nil)
+}
+
+func OpenWith(path string, alg crypto.Algorithm, key []byte) (*Store, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
 	s := new(Store)
 	s.path = path
+	s.cipher = alg
+	s.key = append([]byte(nil), key...)
 	s.eng = policy.NewEngine()
 	if err := s.loadLocked(); err != nil {
 		return nil, err
@@ -118,8 +127,19 @@ func (s *Store) loadLocked() error {
 		}
 		return fmt.Errorf("persist: read %s: %w", s.path, err)
 	}
+	plain := data
+	if crypto.IsSealed(data) {
+		if len(s.key) == 0 {
+			return fmt.Errorf("persist: encrypted %s requires a key", s.path)
+		}
+		pt, err := crypto.Open(s.key, data)
+		if err != nil {
+			return fmt.Errorf("persist: decrypt %s: %w", s.path, err)
+		}
+		plain = pt
+	}
 	eng := policy.NewEngine()
-	if err := eng.Load(string(data)); err != nil {
+	if err := eng.Load(string(plain)); err != nil {
 		return fmt.Errorf("persist: load %s: %w", s.path, err)
 	}
 	s.eng = eng
@@ -132,6 +152,13 @@ func (s *Store) saveLocked() error {
 		return fmt.Errorf("persist: mkdir %s: %w", dir, err)
 	}
 	blob := []byte(s.eng.Serialize())
+	if s.cipher != nil && len(s.key) > 0 {
+		enc, err := crypto.Seal(s.cipher, s.key, blob)
+		if err != nil {
+			return fmt.Errorf("persist: encrypt: %w", err)
+		}
+		blob = enc
+	}
 	tmp, err := os.CreateTemp(dir, ".rbac-*.tmp")
 	if err != nil {
 		return fmt.Errorf("persist: temp file: %w", err)

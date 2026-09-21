@@ -1,11 +1,13 @@
 package persist
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"rbac/crypto"
 	"rbac/policy"
 )
 
@@ -183,5 +185,41 @@ func TestOpenEmptyPathUsesDefault(t *testing.T) {
 	}
 	if s.Path() != DefaultPath() {
 		t.Fatalf("path=%q", s.Path())
+	}
+}
+
+func TestEncryptedPersist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats", DefaultFile)
+	alg := crypto.Default()
+	key, err := alg.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenWith(path, alg, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddBinding(policy.Binding{
+		Src: "u", Dst: "r", Enabled: true,
+		Conditions: []policy.Condition{policy.AllCondition{}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !crypto.IsSealed(raw) || bytes.Contains(raw, []byte("b, u")) {
+		t.Fatalf("expected sealed file: %s", raw)
+	}
+	s2, err := OpenWith(path, alg, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s2.Enforce("u", "r", nil) {
+		t.Fatal("decrypt enforce")
+	}
+	if _, err := OpenWith(path, alg, bytes.Repeat([]byte{9}, len(key))); err == nil {
+		t.Fatal("wrong key")
 	}
 }
