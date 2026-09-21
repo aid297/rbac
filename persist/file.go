@@ -1,10 +1,12 @@
 package persist
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"rbac/crypto"
 	"rbac/policy"
@@ -37,7 +39,15 @@ type Store struct {
 	cipher  crypto.Algorithm
 	key     []byte
 	prevKey []byte
-	mu      sync.Mutex
+	cache   Cache
+	async   bool
+
+	mu        sync.Mutex
+	closeOnce sync.Once
+	closed    bool
+	asyncCh   chan struct{}
+	asyncStop chan struct{}
+	asyncDone chan struct{}
 }
 
 func Open(path string) (*Store, error) {
@@ -104,18 +114,37 @@ func (s *Store) Reachable(subject string, ctx *policy.EvalContext) []string {
 func (s *Store) Serialize() string { return s.eng.Serialize() }
 
 // Reload replaces the in-memory snapshot from disk. Missing file yields an empty engine.
+// With a cache attached, Redis is overwritten from the file snapshot (crash recovery).
 func (s *Store) Reload() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return errClosed
+	}
 	s.eng = policy.NewEngine()
-	return s.loadLocked()
+	if err := s.loadLocked(); err != nil {
+		return err
+	}
+	return s.cacheSetLocked()
 }
 
 func (s *Store) mutate(fn func() error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return errClosed
+	}
+	prev := s.eng.Serialize()
 	if err := fn(); err != nil {
 		return err
+	}
+	if s.cache != nil {
+		if err := s.cacheSetLocked(); err != nil {
+			_ = s.eng.Load(prev)
+			return err
+		}
+		s.kickAsyncLocked()
+		return nil
 	}
 	if err := s.saveLocked(); err != nil {
 		_ = s.loadLocked()
@@ -145,18 +174,42 @@ func (s *Store) loadLocked() error {
 	return nil
 }
 
+func (s *Store) encodeLocked() ([]byte, error) {
+	blob := []byte(s.eng.Serialize())
+	if s.cipher != nil && len(s.key) > 0 {
+		enc, err := crypto.Seal(s.cipher, s.key, blob)
+		if err != nil {
+			return nil, fmt.Errorf("persist: encrypt: %w", err)
+		}
+		return enc, nil
+	}
+	return blob, nil
+}
+
+func (s *Store) cacheSetLocked() error {
+	if s.cache == nil {
+		return nil
+	}
+	blob, err := s.encodeLocked()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.cache.Set(ctx, blob); err != nil {
+		return fmt.Errorf("persist: cache: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) saveLocked() error {
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("persist: mkdir %s: %w", dir, err)
 	}
-	blob := []byte(s.eng.Serialize())
-	if s.cipher != nil && len(s.key) > 0 {
-		enc, err := crypto.Seal(s.cipher, s.key, blob)
-		if err != nil {
-			return fmt.Errorf("persist: encrypt: %w", err)
-		}
-		blob = enc
+	blob, err := s.encodeLocked()
+	if err != nil {
+		return err
 	}
 	tmp, err := os.CreateTemp(dir, ".rbac-*.tmp")
 	if err != nil {

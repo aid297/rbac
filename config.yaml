@@ -7,6 +7,9 @@
 # RBAC_POLICY_KEY overrides policy.key and is not written to this file.
 # ca.dir is the directory only; filenames are always ca.crt and ca.key.
 # Missing CA files under that directory are generated on start (default: secret/).
+# cache.enable + cache.kind: redis turns on a Redis replica; the file remains
+# the source of truth. Writes go to Redis immediately and to disk asynchronously.
+# On crash, the next start loads the file and overwrites Redis. SIGINT/SIGTERM flush disk.
 
 policy:
   dir: stats
@@ -16,3 +19,10 @@ policy:
 
 ca:
   dir: secret
+
+cache:
+  enable: false
+  kind: redis
+  addr: 127.0.0.1:6379
+  password:
+  db: 0

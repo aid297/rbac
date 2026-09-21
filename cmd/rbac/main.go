@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"rbac/cache"
 	"rbac/config"
 	"rbac/persist"
 	"rbac/pki"
@@ -41,11 +45,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.CacheEnabled() {
+		rc, err := cache.OpenRedis(cfg.Cache.Addr, cfg.CachePassword(), cfg.Cache.DB)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		if err := store.UseCache(rc); err != nil {
+			_ = rc.Close()
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	if _, err := pki.Ensure(cfg.CADir()); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("config_file=%s origin=%s policy_dir=%s encrypt=%t crypto=%s policy_file=%s ca_dir=%s bindings=%d\n",
-		cfg.Path, cfg.Origin, cfg.Policy.Dir, cfg.EncryptEnabled(), cfg.Policy.Crypto, store.Path(), cfg.CADir(), len(store.ListBindings()))
+	fmt.Printf("config_file=%s origin=%s policy_dir=%s encrypt=%t crypto=%s policy_file=%s ca_dir=%s cache=%t cache_kind=%s bindings=%d\n",
+		cfg.Path, cfg.Origin, cfg.Policy.Dir, cfg.EncryptEnabled(), cfg.Policy.Crypto, store.Path(), cfg.CADir(),
+		cfg.CacheEnabled(), cfg.Cache.Kind, len(store.ListBindings()))
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+	if err := store.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
 }

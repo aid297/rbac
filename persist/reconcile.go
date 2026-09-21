@@ -153,6 +153,9 @@ func (s *Store) Reconcile() error {
 	if err := s.loadLocked(); err != nil {
 		return err
 	}
+	if err := s.cacheSetLocked(); err != nil {
+		return err
+	}
 	requestResume()
 	return nil
 }
@@ -169,6 +172,9 @@ func (s *Store) Reconfigure(alg crypto.Algorithm, key []byte) error {
 		return err
 	}
 	if err := s.loadLocked(); err != nil {
+		return err
+	}
+	if err := s.cacheSetLocked(); err != nil {
 		return err
 	}
 	requestResume()

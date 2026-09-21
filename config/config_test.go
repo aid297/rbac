@@ -226,6 +226,38 @@ func TestResolvePathPriority(t *testing.T) {
 	}
 }
 
+func TestCacheDisabledByDefault(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv(EnvConfig, "")
+	t.Setenv(EnvPolicyKey, "")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CacheEnabled() {
+		t.Fatal("cache should be off")
+	}
+}
+
+func TestCacheEnableRequiresRedisKind(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv(EnvConfig, "")
+	t.Setenv(EnvPolicyKey, "")
+	mustWrite(t, filepath.Join(dir, DefaultFileName), "cache:\n  enable: true\n  kind: memory\n")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error")
+	}
+	mustWrite(t, filepath.Join(dir, DefaultFileName), "cache:\n  enable: true\n  kind: redis\n")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.CacheEnabled() || cfg.Cache.Addr == "" {
+		t.Fatalf("enable=%t addr=%s", cfg.CacheEnabled(), cfg.Cache.Addr)
+	}
+}
+
 func mustWrite(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

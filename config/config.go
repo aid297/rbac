@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"rbac/cache"
 	"rbac/crypto"
 	"rbac/persist"
 	"rbac/pki"
@@ -19,6 +20,7 @@ const (
 	EnvConfig        = "RBAC_CONFIG"
 	EnvPolicyKey     = "RBAC_POLICY_KEY"
 	EnvPolicyKeyPrev = "RBAC_POLICY_KEY_PREV"
+	EnvCachePassword = "RBAC_CACHE_PASSWORD"
 	DefaultFileName  = "config.yaml"
 )
 
@@ -39,11 +41,20 @@ type Config struct {
 	Origin Origin `mapstructure:"-"`
 	Policy Policy `mapstructure:"policy"`
 	CA     CA     `mapstructure:"ca"`
+	Cache  Cache  `mapstructure:"cache"`
 	key    []byte
 }
 
 type CA struct {
 	Dir string `mapstructure:"dir"`
+}
+
+type Cache struct {
+	Enable   bool   `mapstructure:"enable"`
+	Kind     string `mapstructure:"kind"`
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 type Policy struct {
@@ -66,6 +77,23 @@ func (c *Config) CADir() string {
 
 func (c *Config) PolicyPath() string {
 	return persist.FilePath(c.Policy.Dir)
+}
+
+func (c *Config) CacheEnabled() bool {
+	if c == nil || !c.Cache.Enable {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(c.Cache.Kind), cache.KindRedis)
+}
+
+func (c *Config) CachePassword() string {
+	if env := strings.TrimSpace(os.Getenv(EnvCachePassword)); env != "" {
+		return env
+	}
+	if c == nil {
+		return ""
+	}
+	return c.Cache.Password
 }
 
 func (c *Config) Algorithm() (crypto.Algorithm, error) {
@@ -128,12 +156,20 @@ func Load(flagPath string) (*Config, error) {
 	v.SetConfigType("yaml")
 	v.SetDefault("policy.dir", persist.DefaultDir)
 	v.SetDefault("ca.dir", pki.DefaultDir)
+	v.SetDefault("cache.enable", false)
+	v.SetDefault("cache.kind", cache.KindRedis)
+	v.SetDefault("cache.addr", cache.DefaultAddr)
 
 	cfg := &Config{
 		Path:   path,
 		Origin: origin,
 		Policy: Policy{Dir: persist.DefaultDir},
 		CA:     CA{Dir: pki.DefaultDir},
+		Cache: Cache{
+			Enable: false,
+			Kind:   cache.KindRedis,
+			Addr:   cache.DefaultAddr,
+		},
 	}
 
 	if err := v.ReadInConfig(); err != nil {
@@ -152,12 +188,34 @@ func Load(flagPath string) (*Config, error) {
 		if strings.TrimSpace(cfg.CA.Dir) == "" {
 			cfg.CA.Dir = pki.DefaultDir
 		}
+		if strings.TrimSpace(cfg.Cache.Addr) == "" {
+			cfg.Cache.Addr = cache.DefaultAddr
+		}
+	}
+
+	if err := cfg.validateCache(); err != nil {
+		return nil, err
 	}
 
 	if err := cfg.ensureSecrets(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (c *Config) validateCache() error {
+	if c == nil || !c.Cache.Enable {
+		return nil
+	}
+	kind := strings.ToLower(strings.TrimSpace(c.Cache.Kind))
+	if kind != cache.KindRedis {
+		return fmt.Errorf("config: cache.enable requires cache.kind: %s", cache.KindRedis)
+	}
+	c.Cache.Kind = cache.KindRedis
+	if strings.TrimSpace(c.Cache.Addr) == "" {
+		c.Cache.Addr = cache.DefaultAddr
+	}
+	return nil
 }
 
 func (c *Config) ensureSecrets() error {
@@ -224,6 +282,20 @@ func (c *Config) ensureSecrets() error {
 	return c.writeFile()
 }
 
+func (c *Config) cacheKind() string {
+	if c == nil || strings.TrimSpace(c.Cache.Kind) == "" {
+		return cache.KindRedis
+	}
+	return c.Cache.Kind
+}
+
+func (c *Config) cacheAddr() string {
+	if c == nil || strings.TrimSpace(c.Cache.Addr) == "" {
+		return cache.DefaultAddr
+	}
+	return c.Cache.Addr
+}
+
 func parseKey(s string, want int) ([]byte, error) {
 	key, err := hex.DecodeString(strings.TrimSpace(s))
 	if err != nil {
@@ -236,8 +308,9 @@ func parseKey(s string, want int) ([]byte, error) {
 }
 
 func (c *Config) writeFile() error {
-	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\n",
-		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key, c.CADir())
+	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\n",
+		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key, c.CADir(),
+		c.Cache.Enable, c.cacheKind(), c.cacheAddr(), c.Cache.Password, c.Cache.DB)
 	dir := filepath.Dir(c.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("config: mkdir: %w", err)
