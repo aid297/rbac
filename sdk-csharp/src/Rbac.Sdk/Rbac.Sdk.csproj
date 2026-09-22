@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rbac</RootNamespace>
+    <AssemblyName>Rbac.Sdk</AssemblyName>
+    <Version>0.1.0</Version>
+    <Authors>aid297</Authors>
+    <Description>Official .NET client SDK for the rbac authorization microservice /v1 API</Description>
+    <PackageId>Rbac.Sdk</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/aid297/rbac</RepositoryUrl>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Rbac.Sdk.Tests" />
+  </ItemGroup>
+
+</Project>

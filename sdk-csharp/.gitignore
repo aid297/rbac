@@ -1,0 +1,46 @@
+## .NET / Visual Studio (sdk-csharp)
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+.artifacts/
+out/
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+TestResults/
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+project.lock.json
+project.fragment.lock.json
+
+# User-specific / IDE
+*.user
+*.userosscache
+*.suo
+*.rsuser
+.vs/
+.idea/
+*.DotSettings.user
+
+# Local env
+.env
+.env.local
+
+# MSBuild / misc
+*.binlog
+*.log
+*.tlog
+*.pdb

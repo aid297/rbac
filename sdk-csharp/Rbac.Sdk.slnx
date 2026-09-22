@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Rbac.Sdk/Rbac.Sdk.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Rbac.Sdk.Tests/Rbac.Sdk.Tests.csproj" />
+  </Folder>
+</Solution>
