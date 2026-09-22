@@ -1,4 +1,4 @@
-module rbac
+module github.com/aid297/rbac/server
 
 go 1.27.0
 

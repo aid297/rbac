@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"rbac/config"
-	"rbac/persist"
-	"rbac/policy"
+	"github.com/aid297/rbac/server/config"
+	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/server/policy"
 )
 
 func TestBasicAuthAndQuery(t *testing.T) {

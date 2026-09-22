@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"rbac/persist"
+	"github.com/aid297/rbac/server/persist"
 )
 
 const (

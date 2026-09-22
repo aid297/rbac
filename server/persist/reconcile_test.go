@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"rbac/crypto"
-	"rbac/policy"
+	"github.com/aid297/rbac/server/crypto"
+	"github.com/aid297/rbac/server/policy"
 )
 
 func resetPause() {

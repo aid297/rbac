@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"rbac/persist"
-	"rbac/policy"
+	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/server/policy"
 )
 
 func testStore(t *testing.T) *persist.Store {

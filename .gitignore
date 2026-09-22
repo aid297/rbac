@@ -5,6 +5,7 @@
 *.so
 *.dylib
 /rbac
+/server/rbac
 
 # Test binary and coverage output
 *.test

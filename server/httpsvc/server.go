@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"rbac/persist"
+	"github.com/aid297/rbac/server/persist"
 )
 
 type Options struct {

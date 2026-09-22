@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"rbac/crypto"
-	"rbac/policy"
+	"github.com/aid297/rbac/server/crypto"
+	"github.com/aid297/rbac/server/policy"
 )
 
 // DefaultDir is the cwd-relative data directory used when config does not set policy.dir.

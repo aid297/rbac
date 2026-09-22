@@ -9,12 +9,12 @@ import (
 	"sync"
 	"syscall"
 
-	"rbac/adminui"
-	"rbac/cache"
-	"rbac/config"
-	"rbac/httpsvc"
-	"rbac/persist"
-	"rbac/pki"
+	"github.com/aid297/rbac/server/adminui"
+	"github.com/aid297/rbac/server/cache"
+	"github.com/aid297/rbac/server/config"
+	"github.com/aid297/rbac/server/httpsvc"
+	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/server/pki"
 )
 
 func main() {

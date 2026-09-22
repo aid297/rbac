@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"rbac/persist"
-	"rbac/policy"
+	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/server/policy"
 )
 
 type pair struct {

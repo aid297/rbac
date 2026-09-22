@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"rbac/crypto"
+	"github.com/aid297/rbac/server/crypto"
 )
 
 const EnvPolicyKeyPrev = "RBAC_POLICY_KEY_PREV"

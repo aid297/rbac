@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"rbac/pki"
+	"github.com/aid297/rbac/server/pki"
 )
 
 func TestHTTPSSelfSignedRoundTrip(t *testing.T) {

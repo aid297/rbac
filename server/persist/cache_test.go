@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"rbac/policy"
+	"github.com/aid297/rbac/server/policy"
 )
 
 type memCache struct {
