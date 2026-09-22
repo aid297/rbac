@@ -30,6 +30,8 @@ type Client struct {
 }
 
 // NewClient builds a Client for the service at baseURL (http or https).
+// baseURL should be an origin (e.g. "http://localhost:8080"); any existing
+// path is preserved and API paths are appended via url.JoinPath.
 func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
@@ -46,6 +48,9 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 		if err := opt(cfg); err != nil {
 			return nil, err
 		}
+	}
+	if u.Scheme == "http" && !cfg.httpClientSet && (len(cfg.caCerts) > 0 || cfg.insecure) {
+		return nil, fmt.Errorf("rbac: TLS options (WithCACert, WithInsecureSkipVerify) have no effect with http:// base URL")
 	}
 	hc, err := cfg.buildClient(u.Scheme)
 	if err != nil {
@@ -175,7 +180,7 @@ func bindingQuery(src, dst, scenario string) url.Values {
 // Non-2xx responses become an *APIError; transport errors are returned as-is.
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	u := *c.baseURL
-	u.Path = strings.TrimSuffix(u.Path, "/") + path
+	u = *u.JoinPath(path)
 	if len(query) > 0 {
 		u.RawQuery = query.Encode()
 	}

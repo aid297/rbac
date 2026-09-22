@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// defaultTimeout is applied when no WithTimeout or WithHTTPClient is set,
+// preventing requests from hanging indefinitely.
+const defaultTimeout = 30 * time.Second
+
 type clientConfig struct {
 	httpClient    *http.Client
 	httpClientSet bool
@@ -92,7 +96,7 @@ func (c *clientConfig) buildClient(scheme string) (*http.Client, error) {
 	if c.httpClientSet {
 		return c.httpClient, nil
 	}
-	hc := &http.Client{}
+	hc := &http.Client{Timeout: defaultTimeout}
 	if c.timeoutSet {
 		hc.Timeout = c.timeout
 	}

@@ -217,7 +217,7 @@ func TestBindingCRUD(t *testing.T) {
 		var rec recorded
 		c, _ := testClient(t, recorder(http.StatusCreated, sample, &rec))
 		b, err := c.AddBinding(ctx, Binding{
-			Src: "alice", Dst: "role:editor", Enabled: true,
+			Src: "alice", Dst: "role:editor", Enabled: Bool(true),
 			Conditions: []Condition{AllCondition()},
 		})
 		if err != nil {
@@ -251,7 +251,7 @@ func TestBindingCRUD(t *testing.T) {
 	t.Run("UpdateBinding ok", func(t *testing.T) {
 		var rec recorded
 		c, _ := testClient(t, recorder(http.StatusOK, sample, &rec))
-		if _, err := c.UpdateBinding(ctx, Binding{Src: "alice", Dst: "role:editor", Enabled: true}); err != nil {
+		if _, err := c.UpdateBinding(ctx, Binding{Src: "alice", Dst: "role:editor", Enabled: Bool(true)}); err != nil {
 			t.Fatalf("UpdateBinding: %v", err)
 		}
 		if rec.method != http.MethodPut {
@@ -370,5 +370,57 @@ func TestContextCancellation(t *testing.T) {
 	cancel()
 	if _, err := c.Enforce(ctx, "a", "b"); err == nil {
 		t.Fatal("want error from cancelled context")
+	}
+}
+
+func TestTLSOptionsWithHTTP(t *testing.T) {
+	_, err := NewClient("http://localhost:8080", WithCACert([]byte("fake-pem")))
+	if err == nil {
+		t.Fatal("want error when using TLS options with http://")
+	}
+	_, err = NewClient("http://localhost:8080", WithInsecureSkipVerify(true))
+	if err == nil {
+		t.Fatal("want error when using WithInsecureSkipVerify with http://")
+	}
+	// WithHTTPClient should bypass the TLS check
+	_, err = NewClient("http://localhost:8080", WithHTTPClient(&http.Client{}))
+	if err != nil {
+		t.Fatalf("WithHTTPClient should bypass TLS check: %v", err)
+	}
+}
+
+func TestDefaultTimeout(t *testing.T) {
+	c, err := NewClient("http://localhost:8080")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if c.hc.Timeout != 30*time.Second {
+		t.Fatalf("want 30s default timeout, got %v", c.hc.Timeout)
+	}
+}
+
+func TestDefaultTimeoutOverride(t *testing.T) {
+	c, err := NewClient("http://localhost:8080", WithTimeout(5*time.Second))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if c.hc.Timeout != 5*time.Second {
+		t.Fatalf("want 5s timeout, got %v", c.hc.Timeout)
+	}
+}
+
+func TestJoinPathWithBasePath(t *testing.T) {
+	var rec recorded
+	srv := httptest.NewServer(recorder(http.StatusOK, `{"status":"ok"}`, &rec))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(srv.URL+"/api", WithTimeout(5*time.Second))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if err := c.Health(context.Background()); err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if rec.path != "/api/healthz" {
+		t.Fatalf("want /api/healthz, got %s", rec.path)
 	}
 }

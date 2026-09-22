@@ -42,9 +42,13 @@ nodes, err := client.Reachable(ctx, "alice", rbac.WithScenarios([]string{"VIP"})
 
 `Client` 并发安全，可在整个程序中复用一个实例。所有方法都接收 `context.Context`，用于超时与取消。
 
+> **默认超时**：未设置 `WithTimeout` 或 `WithHTTPClient` 时，请求超时默认为 **30 秒**。生产环境建议根据业务显式设置。
+
 ## HTTPS 与自签 CA
 
 服务端 HTTPS 使用启动时自动生成的**自签 CA**。SDK 提供三种信任方式：
+
+> **注意**：`baseURL` 的主机名必须与证书 SAN（Subject Alternative Name）一致。例如证书签发的是 `localhost`，则不能用 `https://127.0.0.1:8443` 访问，反之亦然。
 
 ```go
 // 方式一：信任 CA 证书（PEM 字节）
@@ -73,11 +77,11 @@ client, err := rbac.NewClient("https://localhost:8443",
 | 选项 | 说明 |
 | --- | --- |
 | `WithHTTPClient(*http.Client)` | 自带 HTTP client；设置后 TLS 与 `WithTimeout` 选项被忽略 |
-| `WithCACert(pem []byte)` | 信任自签 CA（PEM 字节） |
-| `WithCACertFile(path string)` | 从文件读取 CA 证书 |
-| `WithInsecureSkipVerify(bool)` | 跳过 TLS 证书校验（仅测试用） |
+| `WithCACert(pem []byte)` | 信任自签 CA（PEM 字节）；仅对 `https://` 生效，`http://` 下返回错误 |
+| `WithCACertFile(path string)` | 从文件读取 CA 证书；仅对 `https://` 生效 |
+| `WithInsecureSkipVerify(bool)` | 跳过 TLS 证书校验（仅测试用）；仅对 `https://` 生效 |
 | `WithUserAgent(string)` | 覆盖默认 User-Agent（默认 `rbac-sdk-go/<version>`） |
-| `WithTimeout(time.Duration)` | 设置请求超时 |
+| `WithTimeout(time.Duration)` | 设置请求超时（默认 30s） |
 
 调用级选项（用于 `Enforce` / `Reachable`）：
 
@@ -114,7 +118,7 @@ type Binding struct {
     Src        string
     Dst        string
     Scenario   string
-    Enabled    bool
+    Enabled    *bool       // nil 时 JSON 省略该字段，服务端默认为 true；用 Bool(v) 设置
     Conditions []Condition
 }
 
@@ -123,6 +127,8 @@ type Condition struct {
     Start *time.Time    // TIME 半开区间 [Start, End)；nil 表示无界
     End   *time.Time
 }
+
+func Bool(v bool) *bool  // 辅助函数，用于构造 Enabled 指针
 ```
 
 构造条件：
@@ -140,12 +146,14 @@ start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 end := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 
 _, err := client.AddBinding(ctx, rbac.Binding{
-    Src: "alice", Dst: "role:editor", Enabled: true,
+    Src: "alice", Dst: "role:editor", Enabled: rbac.Bool(true),
     Conditions: []rbac.Condition{rbac.TimeRange(&start, &end)},
 })
 ```
 
 > 服务端时间为 RFC3339 **秒级精度**，亚秒值在往返中会丢失。
+>
+> `Enabled` 为 `*bool` 指针类型：`nil`（零值）时 JSON 不发送该字段，由服务端默认为 `true`。需显式启用/禁用时用 `rbac.Bool(true)` / `rbac.Bool(false)`。
 
 ## 错误处理
 

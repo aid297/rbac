@@ -16,13 +16,21 @@ const (
 )
 
 // Binding is a directed edge Src -> Dst, mirroring the service /v1 wire DTO.
+//
+// Enabled is a pointer so that the zero value omits the field from JSON,
+// letting the service default to true. Use Bool(true) / Bool(false) to set
+// it explicitly.
 type Binding struct {
 	Src        string      `json:"src"`
 	Dst        string      `json:"dst"`
 	Scenario   string      `json:"scenario"`
-	Enabled    bool        `json:"enabled"`
+	Enabled    *bool       `json:"enabled,omitempty"`
 	Conditions []Condition `json:"conditions"`
 }
+
+// Bool returns a *bool pointing to v. It is a convenience for constructing
+// Binding literals where Enabled requires a pointer.
+func Bool(v bool) *bool { return &v }
 
 // Condition is a predicate attached to a binding. For KindAll, Start and End
 // are ignored. For KindTime, the interval is half-open [Start, End); a nil
@@ -69,6 +77,11 @@ func (c *Condition) UnmarshalJSON(data []byte) error {
 	var w conditionWire
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
+	}
+	switch w.Kind {
+	case KindAll, KindTime:
+	default:
+		return fmt.Errorf("unknown condition kind: %q", w.Kind)
 	}
 	c.Kind = w.Kind
 	c.Start = nil

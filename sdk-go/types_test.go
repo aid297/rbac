@@ -74,10 +74,41 @@ func TestConditionUnmarshalErrors(t *testing.T) {
 	}
 }
 
+func TestConditionUnknownKind(t *testing.T) {
+	var c Condition
+	if err := json.Unmarshal([]byte(`{"kind":"BOGUS"}`), &c); err == nil {
+		t.Fatal("want error for unknown condition kind")
+	}
+}
+
+func TestBindingEnabledOmitted(t *testing.T) {
+	b := Binding{Src: "a", Dst: "b"}
+	data, err := json.Marshal(b)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
+	if _, present := raw["enabled"]; present {
+		t.Fatalf("enabled should be omitted when nil, got %s", data)
+	}
+
+	b2 := Binding{Src: "a", Dst: "b", Enabled: Bool(false)}
+	data2, err := json.Marshal(b2)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw2 map[string]json.RawMessage
+	_ = json.Unmarshal(data2, &raw2)
+	if _, present := raw2["enabled"]; !present {
+		t.Fatalf("enabled should be present when explicitly set, got %s", data2)
+	}
+}
+
 func TestBindingRoundTrip(t *testing.T) {
 	start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	b := Binding{
-		Src: "alice", Dst: "role:editor", Scenario: "VIP", Enabled: true,
+		Src: "alice", Dst: "role:editor", Scenario: "VIP", Enabled: Bool(true),
 		Conditions: []Condition{TimeRange(tp(start), nil)},
 	}
 	data, err := json.Marshal(b)
@@ -88,8 +119,11 @@ func TestBindingRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if back.Src != b.Src || back.Dst != b.Dst || back.Scenario != b.Scenario || back.Enabled != b.Enabled {
+	if back.Src != b.Src || back.Dst != b.Dst || back.Scenario != b.Scenario {
 		t.Fatalf("binding mismatch: %+v", back)
+	}
+	if back.Enabled == nil || *back.Enabled != true {
+		t.Fatalf("enabled: got %v, want true", back.Enabled)
 	}
 	if len(back.Conditions) != 1 || back.Conditions[0].Start == nil || !back.Conditions[0].Start.Equal(start) {
 		t.Fatalf("condition mismatch: %+v", back.Conditions)
