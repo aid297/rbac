@@ -3,7 +3,7 @@
 Official TypeScript/JavaScript client SDK for the rbac authorization microservice `/v1` API. Mirrors the Go SDK ([`sdk-go`](../sdk-go/)), Rust SDK ([`sdk-rust`](../sdk-rust/)), and C# SDK ([`sdk-csharp`](../sdk-csharp/)).
 
 ```typescript
-import { Client } from '@rbac/sdk';
+import { Client } from 'rbac-sdk-ts';
 
 const client = new Client('http://localhost:8080');
 const allow = await client.enforce('alice', 'doc:42');
@@ -14,11 +14,11 @@ Requirements: Node.js 18+.
 ## Installation
 
 ```bash
-npm install @rbac/sdk
+npm install rbac-sdk-ts
 # or
-yarn add @rbac/sdk
+yarn add rbac-sdk-ts
 # or
-pnpm add @rbac/sdk
+pnpm add rbac-sdk-ts
 ```
 
 ## Quick Start
@@ -96,7 +96,7 @@ enum ConditionKind {
 Creating conditions:
 
 ```typescript
-import { ConditionKind } from '@rbac/sdk';
+import { ConditionKind } from 'rbac-sdk-ts';
 
 const allCondition = { kind: ConditionKind.All };
 const timeRange = {
@@ -127,7 +127,7 @@ await client.addBinding({
 Non-2xx responses throw `ApiError`, with status code predicates:
 
 ```typescript
-import { ApiErrors } from '@rbac/sdk';
+import { ApiErrors } from 'rbac-sdk-ts';
 
 try {
   await client.getBinding('alice', 'role:editor', '');

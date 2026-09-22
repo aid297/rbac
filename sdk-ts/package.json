@@ -1,5 +1,5 @@
 {
-  "name": "@rbac/sdk",
+  "name": "rbac-sdk-ts",
   "version": "0.1.0",
   "description": "Official TypeScript/JavaScript client SDK for the rbac authorization microservice /v1 API",
   "main": "dist/index.js",
