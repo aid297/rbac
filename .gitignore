@@ -27,5 +27,8 @@ go.work.sum
 stats/
 secret/
 
+# Rust
+sdk-rust/target/
+
 # macOS
 .DS_Store
