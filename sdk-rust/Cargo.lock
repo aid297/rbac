@@ -838,7 +838,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rbac-sdk"
+name = "rbac-sdk-rs"
 version = "0.1.0"
 dependencies = [
  "chrono",
