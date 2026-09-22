@@ -1,36 +1,20 @@
-# RBAC service config. Override path with RBAC_CONFIG, then --config.
-# Default lookup: <working directory>/config.yaml
-# policy.dir is the directory only; the filename is always policy.rbac.
-# policy.encrypt is empty by default; first start writes false.
-# policy.crypto is empty by default; first start writes aes-256-gcm (also aes-128-gcm, sm4).
-# policy.key is hex. Generated on first start when encrypt is true and key is empty.
-# RBAC_POLICY_KEY overrides policy.key and is not written to this file.
-# ca.dir is the directory only; filenames are always ca.crt and ca.key.
-# Missing CA files under that directory are generated on start (default: secret/).
-# cache.enable + cache.kind: redis turns on a Redis replica; the file remains
-# the source of truth. Writes go to Redis immediately and to disk asynchronously.
-# On crash, the next start loads the file and overwrites Redis. SIGINT/SIGTERM flush disk.
-# server.http.host is this process's listen IP (also used as the HTTPS certificate SAN).
-# TLS uses a CA-signed server.crt/server.key under ca.dir (created on first HTTPS start).
-# admin.enable starts a preview page on admin.host:admin.port (HTTP Basic Auth).
-# Empty admin.username / admin.password become admin/admin. File edits apply without restart.
-
+log:
+  level: info
+  file: logs/rbac.log
+  debug: false
 policy:
   dir: stats
-  encrypt:
-  crypto:
-  key:
-
+  encrypt: false
+  crypto: aes-256-gcm
+  key: 
 ca:
   dir: secret
-
 cache:
   enable: false
   kind: redis
   addr: 127.0.0.1:6379
-  password:
+  password: 
   db: 0
-
 server:
   http:
     enable: false
@@ -39,7 +23,6 @@ server:
   https:
     enable: false
     port: 8443
-
 admin:
   enable: false
   username: admin

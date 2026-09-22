@@ -52,7 +52,7 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	if u.Scheme == "http" && !cfg.httpClientSet && (len(cfg.caCerts) > 0 || cfg.insecure) {
 		return nil, fmt.Errorf("rbac: TLS options (WithCACert, WithInsecureSkipVerify) have no effect with http:// base URL")
 	}
-	hc, err := cfg.buildClient(u.Scheme)
+	hc, err := cfg.buildClient(u.Scheme, strings.TrimRight(u.String(), "/"))
 	if err != nil {
 		return nil, err
 	}

@@ -13,9 +13,10 @@ import (
 )
 
 type Options struct {
-	HTTPAddr  string
-	HTTPSAddr string
-	TLSCert   *tls.Certificate
+	HTTPAddr   string
+	HTTPSAddr  string
+	TLSCert    *tls.Certificate
+	CACertPEM  []byte // PEM-encoded CA certificate for /v1/ca-cert endpoint
 }
 
 type gate struct {
@@ -53,7 +54,7 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 	persist.SetServiceControl(g)
 	defer persist.SetServiceControl(nil)
 
-	h := g.wrap(NewHandler(store))
+	h := g.wrap(NewHandler(store, opt.CACertPEM))
 	var servers []*http.Server
 	errCh := make(chan error, 2)
 

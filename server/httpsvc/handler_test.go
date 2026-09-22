@@ -31,7 +31,7 @@ func TestHealthzAndEnforce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(NewHandler(s))
+	ts := httptest.NewServer(NewHandler(s, nil))
 	t.Cleanup(ts.Close)
 
 	res, err := http.Get(ts.URL + "/healthz")
@@ -65,7 +65,7 @@ func TestHealthzAndEnforce(t *testing.T) {
 
 func TestBindingsCRUD(t *testing.T) {
 	s := testStore(t)
-	ts := httptest.NewServer(NewHandler(s))
+	ts := httptest.NewServer(NewHandler(s, nil))
 	t.Cleanup(ts.Close)
 
 	res, err := http.Post(ts.URL+"/v1/bindings", "application/json", bytes.NewReader([]byte(`{"src":"a","dst":"b","enabled":true,"conditions":[{"kind":"ALL"}]}`)))
@@ -113,7 +113,7 @@ func TestBindingsCRUD(t *testing.T) {
 
 func TestPauseReturns503(t *testing.T) {
 	s := testStore(t)
-	ts := httptest.NewServer(NewHandler(s))
+	ts := httptest.NewServer(NewHandler(s, nil))
 	t.Cleanup(ts.Close)
 	persist.EnterPause("crypto")
 	res, err := http.Post(ts.URL+"/v1/enforce", "application/json", bytes.NewReader([]byte(`{"subject":"u","target":"r"}`)))

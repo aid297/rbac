@@ -15,13 +15,15 @@ import (
 const maxBody = 1 << 20
 
 type api struct {
-	store *persist.Store
+	store     *persist.Store
+	caCertPEM []byte
 }
 
-func NewHandler(store *persist.Store) http.Handler {
-	a := &api{store: store}
+func NewHandler(store *persist.Store, caCertPEM []byte) http.Handler {
+	a := &api{store: store, caCertPEM: caCertPEM}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", a.healthz)
+	mux.HandleFunc("GET /v1/ca-cert", a.getCACert)
 	mux.HandleFunc("POST /v1/enforce", a.enforce)
 	mux.HandleFunc("GET /v1/reachable", a.reachable)
 	mux.HandleFunc("GET /v1/bindings", a.getBindings)
@@ -57,6 +59,16 @@ func (a *api) healthz(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (a *api) getCACert(w http.ResponseWriter, _ *http.Request) {
+	if len(a.caCertPEM) == 0 {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "CA certificate not available"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(a.caCertPEM)
 }
 
 type enforceReq struct {

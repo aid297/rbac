@@ -30,6 +30,8 @@ const (
 	DefaultAdminPassword = "admin"
 	DefaultAdminHost     = "127.0.0.1"
 	DefaultAdminPort     = 9090
+	DefaultLogLevel      = "info"
+	DefaultLogFile       = "logs/rbac.log"
 )
 
 // Origin is how the config file path was chosen.
@@ -47,12 +49,20 @@ type Config struct {
 	Path string `mapstructure:"-"`
 	// Origin is env, flag, or default.
 	Origin Origin `mapstructure:"-"`
+	Log    Log    `mapstructure:"log"`
 	Policy Policy `mapstructure:"policy"`
 	CA     CA     `mapstructure:"ca"`
 	Cache  Cache  `mapstructure:"cache"`
 	Server Server `mapstructure:"server"`
 	Admin  Admin  `mapstructure:"admin"`
 	key    []byte
+}
+
+// Log controls structured logging output.
+type Log struct {
+	Level string `mapstructure:"level"`
+	File  string `mapstructure:"file"`
+	Debug bool   `mapstructure:"debug"`
 }
 
 type CA struct {
@@ -203,6 +213,24 @@ func (c *Config) AdminAddr() string {
 	return net.JoinHostPort(c.AdminHost(), fmt.Sprintf("%d", c.AdminPort()))
 }
 
+func (c *Config) LogLevel() string {
+	if c == nil || strings.TrimSpace(c.Log.Level) == "" {
+		return DefaultLogLevel
+	}
+	return strings.TrimSpace(c.Log.Level)
+}
+
+func (c *Config) LogFile() string {
+	if c == nil || strings.TrimSpace(c.Log.File) == "" {
+		return DefaultLogFile
+	}
+	return strings.TrimSpace(c.Log.File)
+}
+
+func (c *Config) LogDebug() bool {
+	return c != nil && c.Log.Debug
+}
+
 func (c *Config) Algorithm() (crypto.Algorithm, error) {
 	return crypto.Lookup(c.Policy.Crypto)
 }
@@ -276,10 +304,14 @@ func Load(flagPath string) (*Config, error) {
 	v.SetDefault("admin.password", DefaultAdminPassword)
 	v.SetDefault("admin.host", DefaultAdminHost)
 	v.SetDefault("admin.port", DefaultAdminPort)
+	v.SetDefault("log.level", DefaultLogLevel)
+	v.SetDefault("log.file", DefaultLogFile)
+	v.SetDefault("log.debug", false)
 
 	cfg := &Config{
 		Path:   path,
 		Origin: origin,
+		Log:    Log{Level: DefaultLogLevel, File: DefaultLogFile},
 		Policy: Policy{Dir: persist.DefaultDir},
 		CA:     CA{Dir: pki.DefaultDir},
 		Cache: Cache{
@@ -314,6 +346,12 @@ func Load(flagPath string) (*Config, error) {
 		}
 		if strings.TrimSpace(cfg.CA.Dir) == "" {
 			cfg.CA.Dir = pki.DefaultDir
+		}
+		if strings.TrimSpace(cfg.Log.Level) == "" {
+			cfg.Log.Level = DefaultLogLevel
+		}
+		if strings.TrimSpace(cfg.Log.File) == "" {
+			cfg.Log.File = DefaultLogFile
 		}
 		if strings.TrimSpace(cfg.Cache.Addr) == "" {
 			cfg.Cache.Addr = cache.DefaultAddr
@@ -503,7 +541,8 @@ func parseKey(s string, want int) ([]byte, error) {
 }
 
 func (c *Config) writeFile() error {
-	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\nserver:\n  http:\n    enable: %t\n    host: %s\n    port: %d\n  https:\n    enable: %t\n    port: %d\nadmin:\n  enable: %t\n  username: %s\n  password: %s\n  host: %s\n  port: %d\n",
+	body := fmt.Sprintf("log:\n  level: %s\n  file: %s\n  debug: %t\npolicy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\nserver:\n  http:\n    enable: %t\n    host: %s\n    port: %d\n  https:\n    enable: %t\n    port: %d\nadmin:\n  enable: %t\n  username: %s\n  password: %s\n  host: %s\n  port: %d\n",
+		c.LogLevel(), c.LogFile(), c.LogDebug(),
 		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key, c.CADir(),
 		c.Cache.Enable, c.cacheKind(), c.cacheAddr(), c.Cache.Password, c.Cache.DB,
 		c.HTTPEnabled(), c.HTTPHost(), c.HTTPPort(), c.HTTPSEnabled(), c.HTTPSPort(),

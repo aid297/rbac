@@ -34,7 +34,7 @@ func TestHTTPSSelfSignedRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hs := newHTTPServer(ln.Addr().String(), NewHandler(s))
+	hs := newHTTPServer(ln.Addr().String(), NewHandler(s, nil))
 	hs.TLSConfig = &tls.Config{
 		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},

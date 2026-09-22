@@ -1,0 +1,171 @@
+{
+  "summary": {
+    "projectName": "rbac",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 26,
+    "overview": "RBAC 授权系统项目代码质量良好、文档清晰，但 agent 工作流基础设施处于初始阶段：无项目级 agent 指令、无自动化测试执行、无结构化日志。三个发现均指向 Bootstrap 阶段的基础导航与验证缺失。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [],
+      "coverageRows": [
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Hooks",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Commands",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Plugins",
+          "scopes": [
+            "Plugin"
+          ],
+          "count": 0
+        }
+      ],
+      "repositorySourceRows": []
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 62,
+        "summary": "README 文档质量良好，但缺少 AGENTS.md 导致 agent 无法获取项目级约定和模块边界。",
+        "findingRefs": [
+          "missing-agent-instructions"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 55,
+        "summary": "构建和配置命令明确，但四个独立模块无统一测试入口，agent 需分别操作每个子模块。",
+        "findingRefs": [
+          "missing-agent-instructions"
+        ]
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 45,
+        "summary": "测试覆盖广泛（21 个测试文件），但无自动化执行、无 lint、无覆盖率门禁。",
+        "findingRefs": [
+          "no-automated-test-execution",
+          "limited-server-observability"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 38,
+        "summary": "代码层面有原子写入和优雅退出，但无 CI/CD 管线或合并验收路径。",
+        "findingRefs": [
+          "no-automated-test-execution"
+        ]
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "无可比历史会话或改进对比数据，学习捕获处于初始审查阶段。",
+        "findingRefs": []
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "missing-agent-instructions",
+      "title": "Agent 缺乏项目级指令导航模块边界与开发约定",
+      "severity": "Low",
+      "reason": "工作区无任何 AGENTS.md 文件（经全仓库 glob 扫描确认），32 个源文件分布在 4 个独立模块（server、sdk-go、sdk-csharp、sdk-rust）中。Agent 必须仅从 README 推断项目约定，包括模块边界、测试协议（每个模块需独立测试）、配置约束（如 TLS 选项不能与 http:// 混用）和变更保护规则。README 提供了良好的入口点，但缺少结构化的 agent 指令增加了误改内核包（如 server/policy）或遗漏子模块测试的风险。\n\n证据：文件系统扫描确认 0 个 AGENTS.md；证据信封 agentInstructions.status = 'missing'；建议的 scope 包括 server/policy（6 文件）、sdk-go（4 文件）等 8 个目录。\n\n置信度：中等——缺失已确认，但实际影响取决于 agent 任务复杂度。",
+      "expectedOutput": [
+        "Update the existing Document owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Document",
+      "aiFixPrompt": "创建根目录 AGENTS.md，包含以下项目特定事实：\n- 4 个独立 Go 模块（server/、sdk-go/、demo/demo-go/ 各有 go.mod），每个需独立测试\n- server/policy 为内核包，修改需运行该包全部测试\n- 测试命令：各模块目录下 `go test ./...`\n- 构建命令：`cd server && go build -o rbac ./cmd/rbac`\n- 配置自包含：缺失 config.yaml 时自动生成\n\n## 验证\n- 确认 AGENTS.md 存在且包含模块边界和测试命令\n- 确认 agent 可从中获取正确的测试路由",
+      "dimensionRefs": [
+        "task-understanding",
+        "controlled-execution"
+      ]
+    },
+    {
+      "id": "no-automated-test-execution",
+      "title": "代码变更无自动化回归验证管线",
+      "severity": "Medium",
+      "reason": "项目有 21 个测试文件覆盖所有核心模块（server 8 个包 + sdk-go 全部源文件），但无 CI/CD 管线、Makefile 或构建脚本自动执行测试。回归检测完全依赖人工记忆触发。4 个独立 Go 模块需分别 cd 进入执行 `go test ./...`，增加了遗漏子模块测试的风险。README 推荐 `go test -race ./...` 但无自动执行机制。\n\n证据：无 .github/ 目录、无 Makefile、无构建脚本（文件系统扫描确认）；4 个 go.mod 文件确认模块独立性；21 个 _test.go 文件确认测试存在但无自动化。\n\n置信度：高——测试存在但无自动执行是已验证的事实，多模块结构增加了遗漏风险。",
+      "expectedOutput": [
+        "Update the existing Script owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Script",
+      "aiFixPrompt": "为项目添加自动化测试执行机制。最小可行方案：\n1. 在根目录创建 Makefile 或 shell 脚本，遍历所有 Go 模块执行 `go test -race ./...`\n2. 或添加 GitHub Actions CI 配置，在 push/PR 时自动测试所有模块\n\n## 验证\n- 运行统一测试命令，确认覆盖 server/、sdk-go/、demo/demo-go/ 三个 Go 模块\n- 确认命令在干净环境下可复现",
+      "dimensionRefs": [
+        "change-validation",
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "limited-server-observability",
+      "title": "服务器运行时缺乏结构化诊断能力",
+      "severity": "Low",
+      "reason": "服务器启动时仅有一行 fmt.Printf 摘要输出（server/cmd/rbac/main.go），无结构化日志、无 metrics、无 tracing 框架。当运行时行为需要诊断时（如权限判定异常、策略加载失败、对账循环问题），缺乏可操作的诊断输出。\n\n证据：Grep 搜索确认仅 main.go 有 fmt.Printf 启动摘要；server 子包无 log/slog 导入；无日志配置文件。\n\n置信度：中等——诊断能力受限是事实，但项目处于早期开发阶段（Git 历史仅 4 天），当前影响可能有限。",
+      "expectedOutput": [
+        "Update the existing Code owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Code",
+      "aiFixPrompt": "为服务器添加最小可观测性基础设施：\n1. 使用 Go 标准库 log/slog 包替换 fmt.Printf，提供结构化日志输出\n2. 至少覆盖：启动配置摘要、策略加载结果、HTTP 请求处理错误、对账循环状态\n\n## 验证\n- 启动服务器，确认日志输出为结构化格式\n- 触发一个错误场景，确认错误信息包含可操作的上下文",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    }
+  ]
+}

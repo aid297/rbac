@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -17,6 +18,7 @@ type clientConfig struct {
 	httpClient    *http.Client
 	httpClientSet bool
 	caCerts       [][]byte
+	caCertPath    string
 	insecure      bool
 	userAgent     string
 	timeout       time.Duration
@@ -63,6 +65,20 @@ func WithCACertFile(path string) Option {
 	}
 }
 
+// WithCACertPath configures automatic CA certificate management. The SDK will
+// check if a CA cert exists at the given path; if missing or empty, it fetches
+// from the server's /v1/ca-cert endpoint and caches it locally. On download
+// failure, it retries once before failing permanently.
+func WithCACertPath(path string) Option {
+	return func(c *clientConfig) error {
+		if path == "" {
+			return fmt.Errorf("rbac: WithCACertPath requires a non-empty path")
+		}
+		c.caCertPath = path
+		return nil
+	}
+}
+
 // WithInsecureSkipVerify disables TLS certificate verification. Intended for
 // testing only.
 func WithInsecureSkipVerify(insecure bool) Option {
@@ -91,8 +107,23 @@ func WithTimeout(d time.Duration) Option {
 }
 
 // buildClient resolves the configured options into an *http.Client. scheme is
-// the base URL scheme; TLS is only configured for https.
-func (c *clientConfig) buildClient(scheme string) (*http.Client, error) {
+// the base URL scheme; TLS is only configured for https. If caCertPath is set,
+// it will attempt to load or fetch the CA cert before building the client.
+func (c *clientConfig) buildClient(scheme, baseURL string) (*http.Client, error) {
+	// Handle CA cert auto-fetch if path is configured
+	if c.caCertPath != "" && !c.httpClientSet && scheme == "https" {
+		cache := NewCACache(baseURL, c.caCertPath)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		
+		pem, err := cache.LoadOrFetch(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("rbac: %w", err)
+		}
+		// Add fetched cert to trust pool
+		c.caCerts = append(c.caCerts, pem)
+	}
+
 	if c.httpClientSet {
 		return c.httpClient, nil
 	}
