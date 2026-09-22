@@ -10,6 +10,10 @@
 # cache.enable + cache.kind: redis turns on a Redis replica; the file remains
 # the source of truth. Writes go to Redis immediately and to disk asynchronously.
 # On crash, the next start loads the file and overwrites Redis. SIGINT/SIGTERM flush disk.
+# server.http.host is this process's listen IP (also used as the HTTPS certificate SAN).
+# TLS uses a CA-signed server.crt/server.key under ca.dir (created on first HTTPS start).
+# admin.enable starts a preview page on admin.host:admin.port (HTTP Basic Auth).
+# Empty admin.username / admin.password become admin/admin. File edits apply without restart.
 
 policy:
   dir: stats
@@ -26,3 +30,19 @@ cache:
   addr: 127.0.0.1:6379
   password:
   db: 0
+
+server:
+  http:
+    enable: false
+    host: 0.0.0.0
+    port: 8080
+  https:
+    enable: false
+    port: 8443
+
+admin:
+  enable: false
+  username: admin
+  password: admin
+  host: 127.0.0.1
+  port: 9090

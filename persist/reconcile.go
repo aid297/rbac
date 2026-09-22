@@ -64,6 +64,12 @@ func requestResume() {
 	}
 }
 
+// EnterPause is used by crypto migration and by the HTTP layer tests.
+func EnterPause(reason string) { requestPause(reason) }
+
+// LeavePause clears the process-wide pause flag.
+func LeavePause() { requestResume() }
+
 func prevKeyFromEnv() []byte {
 	s := strings.TrimSpace(os.Getenv(EnvPolicyKeyPrev))
 	if s == "" {

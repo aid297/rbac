@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,11 +18,18 @@ import (
 )
 
 const (
-	EnvConfig        = "RBAC_CONFIG"
-	EnvPolicyKey     = "RBAC_POLICY_KEY"
-	EnvPolicyKeyPrev = "RBAC_POLICY_KEY_PREV"
-	EnvCachePassword = "RBAC_CACHE_PASSWORD"
-	DefaultFileName  = "config.yaml"
+	EnvConfig            = "RBAC_CONFIG"
+	EnvPolicyKey         = "RBAC_POLICY_KEY"
+	EnvPolicyKeyPrev     = "RBAC_POLICY_KEY_PREV"
+	EnvCachePassword     = "RBAC_CACHE_PASSWORD"
+	DefaultFileName      = "config.yaml"
+	DefaultHTTPPort      = 8080
+	DefaultHTTPSPort     = 8443
+	DefaultHTTPHost      = "0.0.0.0"
+	DefaultAdminUser     = "admin"
+	DefaultAdminPassword = "admin"
+	DefaultAdminHost     = "127.0.0.1"
+	DefaultAdminPort     = 9090
 )
 
 // Origin is how the config file path was chosen.
@@ -42,6 +50,8 @@ type Config struct {
 	Policy Policy `mapstructure:"policy"`
 	CA     CA     `mapstructure:"ca"`
 	Cache  Cache  `mapstructure:"cache"`
+	Server Server `mapstructure:"server"`
+	Admin  Admin  `mapstructure:"admin"`
 	key    []byte
 }
 
@@ -55,6 +65,30 @@ type Cache struct {
 	Addr     string `mapstructure:"addr"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+type Server struct {
+	HTTP  HTTPEndpoint  `mapstructure:"http"`
+	HTTPS HTTPSEndpoint `mapstructure:"https"`
+}
+
+type HTTPEndpoint struct {
+	Enable bool   `mapstructure:"enable"`
+	Host   string `mapstructure:"host"`
+	Port   int    `mapstructure:"port"`
+}
+
+type HTTPSEndpoint struct {
+	Enable bool `mapstructure:"enable"`
+	Port   int  `mapstructure:"port"`
+}
+
+type Admin struct {
+	Enable   bool   `mapstructure:"enable"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
 }
 
 type Policy struct {
@@ -94,6 +128,79 @@ func (c *Config) CachePassword() string {
 		return ""
 	}
 	return c.Cache.Password
+}
+
+func (c *Config) HTTPEnabled() bool {
+	return c != nil && c.Server.HTTP.Enable
+}
+
+func (c *Config) HTTPSEnabled() bool {
+	return c != nil && c.Server.HTTPS.Enable
+}
+
+func (c *Config) HTTPHost() string {
+	if c == nil || strings.TrimSpace(c.Server.HTTP.Host) == "" {
+		return DefaultHTTPHost
+	}
+	return strings.TrimSpace(c.Server.HTTP.Host)
+}
+
+func (c *Config) HTTPPort() int {
+	if c == nil || c.Server.HTTP.Port == 0 {
+		return DefaultHTTPPort
+	}
+	return c.Server.HTTP.Port
+}
+
+func (c *Config) HTTPSPort() int {
+	if c == nil || c.Server.HTTPS.Port == 0 {
+		return DefaultHTTPSPort
+	}
+	return c.Server.HTTPS.Port
+}
+
+func (c *Config) HTTPAddr() string {
+	return net.JoinHostPort(c.HTTPHost(), fmt.Sprintf("%d", c.HTTPPort()))
+}
+
+func (c *Config) HTTPSAddr() string {
+	return net.JoinHostPort(c.HTTPHost(), fmt.Sprintf("%d", c.HTTPSPort()))
+}
+
+func (c *Config) AdminEnabled() bool {
+	return c != nil && c.Admin.Enable
+}
+
+func (c *Config) AdminUsername() string {
+	if c == nil || strings.TrimSpace(c.Admin.Username) == "" {
+		return DefaultAdminUser
+	}
+	return strings.TrimSpace(c.Admin.Username)
+}
+
+func (c *Config) AdminPassword() string {
+	if c == nil || c.Admin.Password == "" {
+		return DefaultAdminPassword
+	}
+	return c.Admin.Password
+}
+
+func (c *Config) AdminHost() string {
+	if c == nil || strings.TrimSpace(c.Admin.Host) == "" {
+		return DefaultAdminHost
+	}
+	return strings.TrimSpace(c.Admin.Host)
+}
+
+func (c *Config) AdminPort() int {
+	if c == nil || c.Admin.Port == 0 {
+		return DefaultAdminPort
+	}
+	return c.Admin.Port
+}
+
+func (c *Config) AdminAddr() string {
+	return net.JoinHostPort(c.AdminHost(), fmt.Sprintf("%d", c.AdminPort()))
 }
 
 func (c *Config) Algorithm() (crypto.Algorithm, error) {
@@ -159,6 +266,16 @@ func Load(flagPath string) (*Config, error) {
 	v.SetDefault("cache.enable", false)
 	v.SetDefault("cache.kind", cache.KindRedis)
 	v.SetDefault("cache.addr", cache.DefaultAddr)
+	v.SetDefault("server.http.enable", false)
+	v.SetDefault("server.http.host", DefaultHTTPHost)
+	v.SetDefault("server.http.port", DefaultHTTPPort)
+	v.SetDefault("server.https.enable", false)
+	v.SetDefault("server.https.port", DefaultHTTPSPort)
+	v.SetDefault("admin.enable", false)
+	v.SetDefault("admin.username", DefaultAdminUser)
+	v.SetDefault("admin.password", DefaultAdminPassword)
+	v.SetDefault("admin.host", DefaultAdminHost)
+	v.SetDefault("admin.port", DefaultAdminPort)
 
 	cfg := &Config{
 		Path:   path,
@@ -169,6 +286,16 @@ func Load(flagPath string) (*Config, error) {
 			Enable: false,
 			Kind:   cache.KindRedis,
 			Addr:   cache.DefaultAddr,
+		},
+		Server: Server{
+			HTTP:  HTTPEndpoint{Host: DefaultHTTPHost, Port: DefaultHTTPPort},
+			HTTPS: HTTPSEndpoint{Port: DefaultHTTPSPort},
+		},
+		Admin: Admin{
+			Username: DefaultAdminUser,
+			Password: DefaultAdminPassword,
+			Host:     DefaultAdminHost,
+			Port:     DefaultAdminPort,
 		},
 	}
 
@@ -191,9 +318,21 @@ func Load(flagPath string) (*Config, error) {
 		if strings.TrimSpace(cfg.Cache.Addr) == "" {
 			cfg.Cache.Addr = cache.DefaultAddr
 		}
+		if strings.TrimSpace(cfg.Server.HTTP.Host) == "" {
+			cfg.Server.HTTP.Host = DefaultHTTPHost
+		}
+		if cfg.Server.HTTP.Port == 0 {
+			cfg.Server.HTTP.Port = DefaultHTTPPort
+		}
+		if cfg.Server.HTTPS.Port == 0 {
+			cfg.Server.HTTPS.Port = DefaultHTTPSPort
+		}
 	}
 
 	if err := cfg.validateCache(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateServer(); err != nil {
 		return nil, err
 	}
 
@@ -218,10 +357,66 @@ func (c *Config) validateCache() error {
 	return nil
 }
 
+func (c *Config) validateServer() error {
+	if c == nil {
+		return nil
+	}
+	if c.Server.HTTP.Port < 0 || c.Server.HTTP.Port > 65535 {
+		return fmt.Errorf("config: server.http.port out of range")
+	}
+	if c.Server.HTTPS.Port < 0 || c.Server.HTTPS.Port > 65535 {
+		return fmt.Errorf("config: server.https.port out of range")
+	}
+	if c.Server.HTTP.Port == 0 {
+		c.Server.HTTP.Port = DefaultHTTPPort
+	}
+	if c.Server.HTTPS.Port == 0 {
+		c.Server.HTTPS.Port = DefaultHTTPSPort
+	}
+	if strings.TrimSpace(c.Server.HTTP.Host) == "" {
+		c.Server.HTTP.Host = DefaultHTTPHost
+	}
+	if c.HTTPEnabled() && c.HTTPSEnabled() && c.HTTPPort() == c.HTTPSPort() {
+		return fmt.Errorf("config: server.http.port and server.https.port must differ")
+	}
+	if c.Admin.Port < 0 || c.Admin.Port > 65535 {
+		return fmt.Errorf("config: admin.port out of range")
+	}
+	if c.Admin.Port == 0 {
+		c.Admin.Port = DefaultAdminPort
+	}
+	if strings.TrimSpace(c.Admin.Host) == "" {
+		c.Admin.Host = DefaultAdminHost
+	}
+	if c.AdminEnabled() && c.HTTPEnabled() && c.AdminPort() == c.HTTPPort() && c.AdminHost() == c.HTTPHost() {
+		return fmt.Errorf("config: admin.port must differ from server.http.port on the same host")
+	}
+	if c.AdminEnabled() && c.HTTPSEnabled() && c.AdminPort() == c.HTTPSPort() && c.AdminHost() == c.HTTPHost() {
+		return fmt.Errorf("config: admin.port must differ from server.https.port on the same host")
+	}
+	return nil
+}
+
 func (c *Config) ensureSecrets() error {
 	dirty := false
 	if strings.TrimSpace(c.CA.Dir) == "" {
 		c.CA.Dir = pki.DefaultDir
+		dirty = true
+	}
+	if strings.TrimSpace(c.Admin.Username) == "" {
+		c.Admin.Username = DefaultAdminUser
+		dirty = true
+	}
+	if c.Admin.Password == "" {
+		c.Admin.Password = DefaultAdminPassword
+		dirty = true
+	}
+	if strings.TrimSpace(c.Admin.Host) == "" {
+		c.Admin.Host = DefaultAdminHost
+		dirty = true
+	}
+	if c.Admin.Port == 0 {
+		c.Admin.Port = DefaultAdminPort
 		dirty = true
 	}
 	if c.Policy.Encrypt == nil {
@@ -308,9 +503,11 @@ func parseKey(s string, want int) ([]byte, error) {
 }
 
 func (c *Config) writeFile() error {
-	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\n",
+	body := fmt.Sprintf("policy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\nserver:\n  http:\n    enable: %t\n    host: %s\n    port: %d\n  https:\n    enable: %t\n    port: %d\nadmin:\n  enable: %t\n  username: %s\n  password: %s\n  host: %s\n  port: %d\n",
 		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key, c.CADir(),
-		c.Cache.Enable, c.cacheKind(), c.cacheAddr(), c.Cache.Password, c.Cache.DB)
+		c.Cache.Enable, c.cacheKind(), c.cacheAddr(), c.Cache.Password, c.Cache.DB,
+		c.HTTPEnabled(), c.HTTPHost(), c.HTTPPort(), c.HTTPSEnabled(), c.HTTPSPort(),
+		c.AdminEnabled(), c.AdminUsername(), c.AdminPassword(), c.AdminHost(), c.AdminPort())
 	dir := filepath.Dir(c.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("config: mkdir: %w", err)

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RBAC 预览</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #0f1419; --card: #1a2332; --fg: #e7ecf3; --muted: #8b9bb4; --acc: #3d8bfd; --ok: #3ecf8e; --bad: #f07178; --line: #2a3548; }
+    @media (prefers-color-scheme: light) {
+      :root { --bg: #f4f6f9; --card: #fff; --fg: #1b2430; --muted: #5c6b80; --acc: #1a73e8; --ok: #188038; --bad: #c5221f; --line: #e2e8f0; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+    header { padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--line); }
+    header h1 { margin: 0; font-size: 1.25rem; font-weight: 650; }
+    header p { margin: .35rem 0 0; color: var(--muted); }
+    main { display: grid; gap: 1rem; padding: 1rem 1.5rem 2rem; max-width: 1100px; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; }
+    h2 { margin: 0 0 .75rem; font-size: 1rem; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin: .4rem 0 .2rem; }
+    input { width: 100%; max-width: 280px; padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+    .row { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: flex-end; }
+    button { padding: .45rem .9rem; border: 0; border-radius: 6px; background: var(--acc); color: #fff; font-weight: 600; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--acc); border: 1px solid var(--acc); }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    pre { margin: 0; overflow: auto; font-size: .8rem; background: rgba(0,0,0,.12); padding: .75rem; border-radius: 8px; }
+    .pill { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-weight: 650; }
+    .ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+    .no { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+    .err { color: var(--bad); margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RBAC 策略预览</h1>
+    <p>只读查询：绑定列表、Enforce、Reachable。账号密码来自配置文件，修改后无需重启。</p>
+  </header>
+  <main>
+    <section>
+      <h2>Enforce</h2>
+      <div class="row">
+        <div><label>subject</label><input id="es" placeholder="user / role id"></div>
+        <div><label>target</label><input id="et" placeholder="permission id"></div>
+        <div><label>scenario（可选）</label><input id="esc" placeholder="空=仅通用边"></div>
+        <button type="button" onclick="doEnforce()">查询</button>
+      </div>
+      <p id="enforceOut"></p>
+    </section>
+    <section>
+      <h2>Reachable</h2>
+      <div class="row">
+        <div><label>subject</label><input id="rs" placeholder="user / role id"></div>
+        <div><label>scenario（可选）</label><input id="rsc" placeholder="空=仅通用边"></div>
+        <button type="button" onclick="doReachable()">查询</button>
+      </div>
+      <p id="reachOut"></p>
+    </section>
+    <section>
+      <h2>绑定预览 <button class="secondary" type="button" onclick="loadAll()">刷新</button></h2>
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>src</th><th>dst</th><th>scenario</th><th>enabled</th><th>conditions</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section>
+      <h2>策略原文</h2>
+      <pre id="raw"></pre>
+    </section>
+  </main>
+  <script>
+    async function api(path, opt) {
+      const res = await fetch(path, Object.assign({ credentials: "same-origin" }, opt || {}));
+      if (res.status === 401) throw new Error("未授权");
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+      if (!res.ok) throw new Error((data && data.error) || res.statusText);
+      return data;
+    }
+    function conds(c) {
+      if (!c || !c.length) return "ALL";
+      return c.map(x => {
+        if ((x.kind || "").toUpperCase() === "ALL") return "ALL";
+        return "TIME:" + (x.start || "") + "~" + (x.end || "");
+      }).join("; ");
+    }
+    async function loadAll() {
+      const data = await api("/api/bindings");
+      const tb = document.getElementById("rows");
+      tb.innerHTML = "";
+      (data.bindings || []).forEach(b => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = "<td>" + esc(b.src) + "</td><td>" + esc(b.dst) + "</td><td>" + esc(b.scenario || "") +
+          "</td><td>" + (b.enabled ? "1" : "0") + "</td><td>" + esc(conds(b.conditions)) + "</td>";
+        tb.appendChild(tr);
+      });
+      const pol = await api("/api/policy");
+      document.getElementById("raw").textContent = pol.text || "";
+    }
+    async function doEnforce() {
+      const out = document.getElementById("enforceOut");
+      out.textContent = "";
+      try {
+        const body = { subject: document.getElementById("es").value.trim(), target: document.getElementById("et").value.trim() };
+        const sc = document.getElementById("esc").value.trim();
+        if (sc) body.scenarios = [sc];
+        const data = await api("/api/enforce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        out.innerHTML = data.allow
+          ? '<span class="pill ok">allow</span>'
+          : '<span class="pill no">deny</span>';
+      } catch (e) { out.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; }
+    }
+    async function doReachable() {
+      const out = document.getElementById("reachOut");
+      out.textContent = "";
+      try {
+        const q = new URLSearchParams({ subject: document.getElementById("rs").value.trim() });
+        const sc = document.getElementById("rsc").value.trim();
+        if (sc) q.append("scenario", sc);
+        const data = await api("/api/reachable?" + q.toString());
+        out.textContent = (data.reachable || []).join(", ");
+      } catch (e) { out.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; }
+    }
+    function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+    loadAll().catch(e => { document.getElementById("raw").textContent = e.message; });
+  </script>
+</body>
+</html>

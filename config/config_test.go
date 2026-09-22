@@ -258,6 +258,82 @@ func TestCacheEnableRequiresRedisKind(t *testing.T) {
 	}
 }
 
+func TestServerDefaultsAndSamePortRejected(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv(EnvConfig, "")
+	t.Setenv(EnvPolicyKey, "")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTPEnabled() || cfg.HTTPSEnabled() {
+		t.Fatal("servers should be off")
+	}
+	if cfg.HTTPPort() != DefaultHTTPPort || cfg.HTTPSPort() != DefaultHTTPSPort {
+		t.Fatalf("ports %d %d", cfg.HTTPPort(), cfg.HTTPSPort())
+	}
+	if cfg.HTTPAddr() != "0.0.0.0:8080" {
+		t.Fatalf("addr=%s", cfg.HTTPAddr())
+	}
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustWrite(t, filepath.Join(dir, DefaultFileName), "server:\n  http:\n    enable: true\n    port: 8443\n  https:\n    enable: true\n    port: 8443\n")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected same-port error")
+	}
+}
+
+func TestAdminDefaults(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv(EnvConfig, "")
+	t.Setenv(EnvPolicyKey, "")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AdminEnabled() {
+		t.Fatal("admin should be off")
+	}
+	if cfg.AdminUsername() != DefaultAdminUser || cfg.AdminPassword() != DefaultAdminPassword {
+		t.Fatalf("user=%s", cfg.AdminUsername())
+	}
+	if cfg.AdminAddr() != "127.0.0.1:9090" {
+		t.Fatalf("addr=%s", cfg.AdminAddr())
+	}
+}
+
+func TestAdminEmptyCredsBecomeDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv(EnvConfig, "")
+	t.Setenv(EnvPolicyKey, "")
+	mustWrite(t, filepath.Join(dir, DefaultFileName), "admin:\n  enable: true\n  username:\n  password:\n")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AdminEnabled() {
+		t.Fatal("enable")
+	}
+	if cfg.AdminUsername() != "admin" || cfg.AdminPassword() != "admin" {
+		t.Fatalf("%s %s", cfg.AdminUsername(), cfg.AdminPassword())
+	}
+}
+
+func TestReadAdminFromFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DefaultFileName)
+	mustWrite(t, path, "admin:\n  enable: true\n  username: ops\n  password: p@ss\n  host: 10.0.0.2\n  port: 9191\n")
+	a, err := ReadAdmin(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Enable || a.Username != "ops" || a.Password != "p@ss" || a.Host != "10.0.0.2" || a.Port != 9191 {
+		t.Fatalf("%+v", a)
+	}
+}
+
 func mustWrite(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
