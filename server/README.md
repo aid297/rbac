@@ -203,4 +203,4 @@ go test ./policy/... -cover
 
 ## 许可证
 
-[MIT](LICENSE)
+[MIT](../LICENSE)
