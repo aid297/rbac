@@ -1,34 +1,15 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Monorepo-wide ignores. Language/runtime artifacts live in each subproject's .gitignore.
+
+# Runtime policy and CA material when the server is started from the repo root
+/stats/
+/secret/
 /rbac
-/server/rbac
-
-# Test binary and coverage output
-*.test
-*.out
-coverage.txt
-
-# Go workspace file
-go.work
-go.work.sum
-
-# Vendor directory (uncomment if not vendoring)
-# vendor/
-
-# Environment files
-.env
-.env.local
-
-# Runtime policy and CA material
-stats/
-secret/
-
-# Rust
-sdk-rust/target/
 
 # macOS
 .DS_Store
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*~

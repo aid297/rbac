@@ -1,0 +1,32 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/rbac
+/cmd/rbac/rbac
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (uncomment if not vendoring)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Local env overrides (RBAC_POLICY_KEY etc.)
+.env
+.env.local
+
+# Runtime policy store and CA / TLS material (relative to process cwd)
+/stats/
+/secret/
