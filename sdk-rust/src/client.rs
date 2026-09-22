@@ -326,6 +326,7 @@ pub struct ClientBuilder {
     base_url: Url,
     custom_http: Option<HttpClient>,
     ca_pems: Vec<Vec<u8>>,
+    ca_cert_path: Option<String>,
     insecure: bool,
     user_agent: String,
     timeout: Duration,
@@ -349,6 +350,7 @@ impl ClientBuilder {
             base_url: u,
             custom_http: None,
             ca_pems: Vec::new(),
+            ca_cert_path: None,
             insecure: false,
             user_agent: DEFAULT_USER_AGENT.to_string(),
             timeout: DEFAULT_TIMEOUT,
@@ -383,6 +385,15 @@ impl ClientBuilder {
         self.ca_cert(pem)
     }
 
+    /// Configures automatic CA certificate management. The SDK will check if a
+    /// CA cert exists at the given path; if missing or empty, it fetches from
+    /// the server's `/v1/ca-cert` endpoint and caches it locally. On download
+    /// failure, it retries once before failing permanently.
+    pub fn ca_cert_path(mut self, path: impl Into<String>) -> Self {
+        self.ca_cert_path = Some(path.into());
+        self
+    }
+
     /// Disables TLS certificate verification (testing only).
     pub fn insecure_skip_verify(mut self, insecure: bool) -> Self {
         self.insecure = insecure;
@@ -408,12 +419,22 @@ impl ClientBuilder {
         let scheme = self.base_url.scheme();
         if scheme == "http"
             && self.custom_http.is_none()
-            && (!self.ca_pems.is_empty() || self.insecure)
+            && (!self.ca_pems.is_empty() || self.insecure || self.ca_cert_path.is_some())
         {
             return Err(Error::Config(
-                "TLS options (ca_cert, insecure_skip_verify) have no effect with http:// base URL"
+                "TLS options (ca_cert, ca_cert_path, insecure_skip_verify) have no effect with http:// base URL"
                     .into(),
             ));
+        }
+
+        // Handle CA cert auto-fetch if path is configured
+        let mut ca_pems = self.ca_pems;
+        if let Some(ref path) = self.ca_cert_path {
+            if self.custom_http.is_none() && scheme == "https" {
+                let cache = crate::cacache::CACache::new(&self.base_url.to_string(), path);
+                let pem = cache.load_or_fetch()?;
+                ca_pems.push(pem);
+            }
         }
 
         let http = if let Some(hc) = self.custom_http {
@@ -426,11 +447,11 @@ impl ClientBuilder {
                     DEFAULT_TIMEOUT
                 })
                 .user_agent(""); // we set UA per-request
-            if scheme == "https" && (!self.ca_pems.is_empty() || self.insecure) {
+            if scheme == "https" && (!ca_pems.is_empty() || self.insecure) {
                 if self.insecure {
                     b = b.danger_accept_invalid_certs(true);
                 }
-                for pem in &self.ca_pems {
+                for pem in &ca_pems {
                     let cert = parse_ca_pem(pem)?;
                     b = b.add_root_certificate(cert);
                 }

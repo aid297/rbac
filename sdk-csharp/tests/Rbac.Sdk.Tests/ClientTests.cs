@@ -320,3 +320,54 @@ internal sealed class RecordingHandler : HttpMessageHandler
         return _respond(request);
     }
 }
+
+public class CACertIntegrationTests : IDisposable
+{
+    private readonly string _tempDir;
+
+    public CACertIntegrationTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), $"rbac-test-{Guid.NewGuid()}");
+        Directory.CreateDirectory(_tempDir);
+    }
+
+    [Fact]
+    public void WithCACertPath_Validates_NonEmpty()
+    {
+        var ex = Assert.ThrowsAny<ArgumentException>(() =>
+            new ClientOptions().WithCACertPath(""));
+    }
+
+    [Fact]
+    public void WithCACertPath_Rejected_With_HTTP_BaseURL()
+    {
+        var caPath = Path.Combine(_tempDir, "ca.pem");
+        var ex = Assert.ThrowsAny<ClientConfigException>(() =>
+            new Client("http://localhost:8080", new ClientOptions().WithCACertPath(caPath)));
+        Assert.Contains("TLS options", ex.Message);
+    }
+
+    [Fact]
+    public void Client_WithCACertPath_Integration()
+    {
+        // This test verifies that the option can be set without error.
+        // Full end-to-end testing would require a running server with /v1/ca-cert endpoint.
+        var caPath = Path.Combine(_tempDir, "ca-integration.pem");
+        
+        // Should not throw when creating options
+        var options = new ClientOptions().WithCACertPath(caPath);
+        Assert.NotNull(options);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_tempDir, true);
+        }
+        catch
+        {
+            // Ignore cleanup errors
+        }
+    }
+}

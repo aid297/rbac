@@ -45,7 +45,7 @@ var nodes = await client.ReachableAsync("alice", new CallOptions().WithScenarios
 
 ## HTTPS 与自签 CA
 
-服务端 HTTPS 使用启动时自动生成的**自签 CA**。SDK 提供三种信任方式：
+服务端 HTTPS 使用启动时自动生成的**自签 CA**。SDK 提供四种信任方式：
 
 > **注意**：`baseUrl` 的主机名必须与证书 SAN 一致。例如证书签发的是 `localhost`，则不能用 `https://127.0.0.1:8443` 访问，反之亦然。
 
@@ -58,11 +58,17 @@ using var client = new Client("https://localhost:8443",
 using var client = new Client("https://localhost:8443",
     new ClientOptions().WithCACertFile("secret/ca.crt"));
 
-// 方式三：跳过证书校验（仅建议测试使用）
+// 方式三：自动管理 CA 证书（推荐生产环境）
+// SDK 会检查本地路径是否存在 CA 证书；如果缺失或为空，自动从服务端 /v1/ca-cert 下载并缓存
+// 下载失败会重试一次，两次都失败则返回错误
+using var client = new Client("https://localhost:8443",
+    new ClientOptions().WithCACertPath("/path/to/cache/ca.pem"));
+
+// 方式四：跳过证书校验（仅建议测试使用）
 using var client = new Client("https://localhost:8443",
     new ClientOptions().WithInsecureSkipVerify(true));
 
-// 方式四：自带 HttpClient（TLS 由你自行配置；此时 TLS / Timeout 选项被忽略）
+// 方式五：自带 HttpClient（TLS 由你自行配置；此时 TLS / Timeout 选项被忽略）
 using var client = new Client("https://localhost:8443",
     new ClientOptions().WithHttpClient(myHttpClient));
 ```
@@ -74,6 +80,7 @@ using var client = new Client("https://localhost:8443",
 | `WithHttpClient(HttpClient)` | 自带 HttpClient；设置后 TLS 与 `WithTimeout` 被忽略；SDK 不 Dispose 该实例 |
 | `WithCACert(pem)` | 信任自签 CA（PEM）；仅对 `https://` 生效，`http://` 下抛错 |
 | `WithCACertFile(path)` | 从文件读取 CA；仅对 `https://` 生效 |
+| `WithCACertPath(path)` | **自动管理 CA 证书**：检查本地路径是否存在，缺失时从服务端 `/v1/ca-cert` 下载并缓存；下载失败重试一次 |
 | `WithInsecureSkipVerify(bool)` | 跳过 TLS 校验（仅测试）；仅对 `https://` 生效 |
 | `WithUserAgent(string)` | 覆盖默认 User-Agent（默认 `rbac-sdk-csharp/<version>`） |
 | `WithTimeout(TimeSpan)` | 请求超时（默认 30s） |

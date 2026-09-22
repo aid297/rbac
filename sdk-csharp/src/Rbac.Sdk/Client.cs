@@ -44,13 +44,13 @@ public sealed class Client : IDisposable
         if (string.IsNullOrEmpty(uri.Host))
             throw new ClientConfigException("base URL must include a host");
 
-        if (uri.Scheme == "http" && !options.HttpClientSet && (options.CaCerts.Count > 0 || options.Insecure))
+        if (uri.Scheme == "http" && !options.HttpClientSet && (options.CaCerts.Count > 0 || options.Insecure || options.CaCertPath != null))
             throw new ClientConfigException(
-                "TLS options (WithCACert, WithInsecureSkipVerify) have no effect with http:// base URL");
+                "TLS options (WithCACert, WithCACertPath, WithInsecureSkipVerify) have no effect with http:// base URL");
 
         _baseUrl = uri;
         _ownsHttpClient = !options.HttpClientSet;
-        _http = options.BuildHttpClient(uri.Scheme);
+        _http = options.BuildHttpClient(uri.Scheme, trimmed);
         _userAgent = string.IsNullOrEmpty(options.UserAgent) ? DefaultUserAgent : options.UserAgent;
     }
 

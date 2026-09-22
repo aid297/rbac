@@ -9,6 +9,7 @@ public sealed class ClientOptions
     internal HttpClient? HttpClient { get; private set; }
     internal bool HttpClientSet { get; private set; }
     internal List<byte[]> CaCerts { get; } = [];
+    internal string? CaCertPath { get; private set; }
     internal bool Insecure { get; private set; }
     internal string UserAgent { get; private set; } = Client.DefaultUserAgent;
     internal TimeSpan Timeout { get; private set; } = Client.DefaultTimeout;
@@ -56,6 +57,19 @@ public sealed class ClientOptions
         }
     }
 
+    /// <summary>
+    /// Configures automatic CA certificate management. The SDK will check if a
+    /// CA cert exists at the given path; if missing or empty, it fetches from
+    /// the server's /v1/ca-cert endpoint and caches it locally. On download
+    /// failure, it retries once before failing permanently.
+    /// </summary>
+    public ClientOptions WithCACertPath(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        CaCertPath = path;
+        return this;
+    }
+
     /// <summary>Disables TLS certificate verification. Intended for testing only.</summary>
     public ClientOptions WithInsecureSkipVerify(bool insecure)
     {
@@ -78,8 +92,16 @@ public sealed class ClientOptions
         return this;
     }
 
-    internal HttpClient BuildHttpClient(string scheme)
+    internal HttpClient BuildHttpClient(string scheme, string baseUrl)
     {
+        // Handle CA cert auto-fetch if path is configured
+        if (CaCertPath != null && !HttpClientSet && scheme == "https")
+        {
+            using var cache = new CACache(baseUrl, CaCertPath);
+            var pem = cache.LoadOrFetch();
+            CaCerts.Add(pem);
+        }
+
         if (HttpClientSet)
             return HttpClient!;
 

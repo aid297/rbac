@@ -50,7 +50,7 @@ fn main() -> Result<(), Error> {
 
 ## HTTPS 与自签 CA
 
-服务端 HTTPS 使用启动时自动生成的**自签 CA**。SDK 提供三种信任方式：
+服务端 HTTPS 使用启动时自动生成的**自签 CA**。SDK 提供四种信任方式：
 
 > **注意**：`base_url` 的主机名必须与证书 SAN 一致。例如证书签发的是 `localhost`，则不能用 `https://127.0.0.1:8443` 访问，反之亦然。
 
@@ -65,12 +65,19 @@ let client = Client::builder("https://localhost:8443")?
     .ca_cert_file("secret/ca.crt")?
     .build()?;
 
-// 方式三：跳过证书校验（仅建议测试使用）
+// 方式三：自动管理 CA 证书（推荐生产环境）
+// SDK 会检查本地路径是否存在 CA 证书；如果缺失或为空，自动从服务端 /v1/ca-cert 下载并缓存
+// 下载失败会重试一次，两次都失败则返回错误
+let client = Client::builder("https://localhost:8443")?
+    .ca_cert_path("/path/to/cache/ca.pem")?
+    .build()?;
+
+// 方式四：跳过证书校验（仅建议测试使用）
 let client = Client::builder("https://localhost:8443")?
     .insecure_skip_verify(true)
     .build()?;
 
-// 方式四：自带 reqwest::blocking::Client（TLS 由你自行配置；此时 TLS / timeout 选项被忽略）
+// 方式五：自带 reqwest::blocking::Client（TLS 由你自行配置；此时 TLS / timeout 选项被忽略）
 let client = Client::builder("https://localhost:8443")?
     .http_client(my_http_client)
     .build()?;
@@ -83,6 +90,7 @@ let client = Client::builder("https://localhost:8443")?
 | `http_client(Client)` | 自带 blocking HTTP client；设置后 TLS 与 `timeout` 被忽略 |
 | `ca_cert(pem)` | 信任自签 CA（PEM）；仅对 `https://` 生效，`http://` 下返回错误 |
 | `ca_cert_file(path)` | 从文件读取 CA；仅对 `https://` 生效 |
+| `ca_cert_path(path)` | **自动管理 CA 证书**：检查本地路径是否存在，缺失时从服务端 `/v1/ca-cert` 下载并缓存；下载失败重试一次 |
 | `insecure_skip_verify(bool)` | 跳过 TLS 校验（仅测试）；仅对 `https://` 生效 |
 | `user_agent(string)` | 覆盖默认 User-Agent（默认 `rbac-sdk-rust/<version>`） |
 | `timeout(Duration)` | 请求超时（默认 30s） |
