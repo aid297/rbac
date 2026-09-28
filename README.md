@@ -9,7 +9,8 @@
 | [`server/`](server/) | Go module `github.com/aid297/rbac/server`：HTTP / HTTPS REST API、管理预览页、文件持久化、可选 Redis 缓存、可选静态加密、自签 CA |
 | [`sdk-go/`](sdk-go/) | Go module `github.com/aid297/rbac/sdk-go`：对接 `/v1` API 的官方 Go 客户端（仅依赖标准库） |
 | [`sdk-rust/`](sdk-rust/) | Rust crate `rbac-sdk`（库名 `rbac`）：对接同一 `/v1` API 的官方 Rust 客户端 |
-| [`sdk-csharp/`](sdk-csharp/) | .NET 包 `Rbac.Sdk`（命名空间 `Rbac`）：对接同一 `/v1` API 的官方 C# 客户端 |
+| [`sdk-csharp/`](sdk-csharp/) | .NET 包 `Rbac.Sdk.Cs`（命名空间 `Rbac`）：对接同一 `/v1` API 的官方 C# 客户端 |
+| [`sdk-ts/`](sdk-ts/) | npm 包 `rbac-sdk-ts`：对接同一 `/v1` API 的官方 TypeScript/JavaScript 客户端 |
 
 设计文档见 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
 
@@ -53,6 +54,15 @@ using var client = Client.Create("http://localhost:8080");
 var allow = await client.EnforceAsync("alice", "doc:42");
 ```
 
+在 TypeScript/JavaScript 程序中用 SDK 接入（详见 [`sdk-ts/README.md`](sdk-ts/README.md)）：
+
+```typescript
+import { Client } from 'rbac-sdk-ts';
+
+const client = new Client('http://localhost:8080');
+const allow = await client.enforce('alice', 'doc:42');
+```
+
 ## 开发
 
 ```bash
@@ -67,6 +77,9 @@ cd sdk-rust && cargo test
 
 # C# SDK
 cd sdk-csharp && dotnet test
+
+# TypeScript SDK
+cd sdk-ts && npm test
 ```
 
 ## 许可证
