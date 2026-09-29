@@ -4,16 +4,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc"
+
+	rbacv1 "github.com/aid297/rbac/sdk-go/internal/rbacv1"
 )
 
 // Version is the SDK version, reported in the default User-Agent header.
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 const defaultUserAgent = "rbac-sdk-go/" + Version
 
@@ -22,11 +28,50 @@ const defaultUserAgent = "rbac-sdk-go/" + Version
 const maxResponseBytes = 4 << 20
 
 // Client is a concurrency-safe client for the rbac microservice /v1 API.
-// Construct it with NewClient.
+// Construct it with NewClient (HTTP) or NewGRPCClient (gRPC).
 type Client struct {
 	baseURL   *url.URL
 	hc        *http.Client
 	userAgent string
+
+	grpcConn *grpc.ClientConn
+	grpc     rbacv1.RbacServiceClient
+	timeout  time.Duration
+
+	// isGRPC is set at construction and never cleared, so Close() cannot make
+	// methods fall through to the HTTP path (which would panic on a nil baseURL).
+	isGRPC bool
+	closed atomic.Bool
+}
+
+// errClientClosed is returned by methods after Close.
+var errClientClosed = errors.New("rbac: client is closed")
+
+// Close releases resources. For HTTP clients it is a no-op; for gRPC clients it
+// closes the underlying connection. Safe to call more than once and safe to
+// race with in-flight RPCs: fields are left intact so concurrent callers do not
+// observe a nil c.grpc; after Close, new RPCs fail via ensureOpen / the closed
+// connection rather than panicking.
+func (c *Client) Close() error {
+	if c == nil || !c.isGRPC {
+		return nil
+	}
+	if c.closed.Swap(true) {
+		return nil
+	}
+	if c.grpcConn == nil {
+		return nil
+	}
+	return c.grpcConn.Close()
+}
+
+func (c *Client) useGRPC() bool { return c != nil && c.isGRPC }
+
+func (c *Client) ensureOpen() error {
+	if c != nil && c.closed.Load() {
+		return errClientClosed
+	}
+	return nil
 }
 
 // NewClient builds a Client for the service at baseURL (http or https).
@@ -59,20 +104,36 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	if cfg.userAgent == "" {
 		cfg.userAgent = defaultUserAgent
 	}
-	return &Client{baseURL: u, hc: hc, userAgent: cfg.userAgent}, nil
+	timeout := defaultTimeout
+	if cfg.timeoutSet {
+		timeout = cfg.timeout
+	}
+	return &Client{baseURL: u, hc: hc, userAgent: cfg.userAgent, timeout: timeout}, nil
 }
 
-// Health checks service liveness. It returns nil on 200, or an *APIError
+// Health checks service liveness. It returns nil on success, or an *APIError
 // (IsPaused) when the service is paused.
 func (c *Client) Health(ctx context.Context) error {
+	if err := c.ensureOpen(); err != nil {
+		return err
+	}
+	if c.useGRPC() {
+		return c.grpcHealth(ctx)
+	}
 	return c.do(ctx, http.MethodGet, "/healthz", nil, nil, nil)
 }
 
 // Enforce reports whether subject can reach target under the given call options.
 func (c *Client) Enforce(ctx context.Context, subject, target string, opts ...CallOption) (bool, error) {
+	if err := c.ensureOpen(); err != nil {
+		return false, err
+	}
 	p := &callParams{}
 	for _, o := range opts {
 		o(p)
+	}
+	if c.useGRPC() {
+		return c.grpcEnforce(ctx, subject, target, p)
 	}
 	body := struct {
 		Subject   string     `json:"subject"`
@@ -91,9 +152,15 @@ func (c *Client) Enforce(ctx context.Context, subject, target string, opts ...Ca
 
 // Reachable lists every node subject can reach, including subject itself.
 func (c *Client) Reachable(ctx context.Context, subject string, opts ...CallOption) ([]string, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
 	p := &callParams{}
 	for _, o := range opts {
 		o(p)
+	}
+	if c.useGRPC() {
+		return c.grpcReachable(ctx, subject, p)
 	}
 	q := url.Values{}
 	q.Set("subject", subject)
@@ -111,6 +178,12 @@ func (c *Client) Reachable(ctx context.Context, subject string, opts ...CallOpti
 
 // ListBindings returns all bindings.
 func (c *Client) ListBindings(ctx context.Context) ([]Binding, error) {
+	if err := c.ensureOpen(); err != nil {
+		return nil, err
+	}
+	if c.useGRPC() {
+		return c.grpcListBindings(ctx)
+	}
 	var out struct {
 		Bindings []Binding `json:"bindings"`
 	}
@@ -122,6 +195,12 @@ func (c *Client) ListBindings(ctx context.Context) ([]Binding, error) {
 
 // GetBinding fetches a single binding, or an *APIError (IsNotFound) if absent.
 func (c *Client) GetBinding(ctx context.Context, src, dst, scenario string) (Binding, error) {
+	if err := c.ensureOpen(); err != nil {
+		return Binding{}, err
+	}
+	if c.useGRPC() {
+		return c.grpcGetBinding(ctx, src, dst, scenario)
+	}
 	q := bindingQuery(src, dst, scenario)
 	var out Binding
 	if err := c.do(ctx, http.MethodGet, "/v1/bindings", q, nil, &out); err != nil {
@@ -132,6 +211,12 @@ func (c *Client) GetBinding(ctx context.Context, src, dst, scenario string) (Bin
 
 // AddBinding creates a binding. A duplicate returns an *APIError (IsConflict).
 func (c *Client) AddBinding(ctx context.Context, b Binding) (Binding, error) {
+	if err := c.ensureOpen(); err != nil {
+		return Binding{}, err
+	}
+	if c.useGRPC() {
+		return c.grpcAddBinding(ctx, b)
+	}
 	var out Binding
 	if err := c.do(ctx, http.MethodPost, "/v1/bindings", nil, b, &out); err != nil {
 		return Binding{}, err
@@ -142,6 +227,12 @@ func (c *Client) AddBinding(ctx context.Context, b Binding) (Binding, error) {
 // UpdateBinding replaces an existing binding. A missing binding returns an
 // *APIError (IsNotFound); it is not created.
 func (c *Client) UpdateBinding(ctx context.Context, b Binding) (Binding, error) {
+	if err := c.ensureOpen(); err != nil {
+		return Binding{}, err
+	}
+	if c.useGRPC() {
+		return c.grpcUpdateBinding(ctx, b)
+	}
 	var out Binding
 	if err := c.do(ctx, http.MethodPut, "/v1/bindings", nil, b, &out); err != nil {
 		return Binding{}, err
@@ -151,6 +242,12 @@ func (c *Client) UpdateBinding(ctx context.Context, b Binding) (Binding, error) 
 
 // SetEnabled toggles a binding's enabled flag.
 func (c *Client) SetEnabled(ctx context.Context, src, dst, scenario string, enabled bool) error {
+	if err := c.ensureOpen(); err != nil {
+		return err
+	}
+	if c.useGRPC() {
+		return c.grpcSetEnabled(ctx, src, dst, scenario, enabled)
+	}
 	body := struct {
 		Src      string `json:"src"`
 		Dst      string `json:"dst"`
@@ -162,6 +259,12 @@ func (c *Client) SetEnabled(ctx context.Context, src, dst, scenario string, enab
 
 // RemoveBinding deletes a binding, or returns an *APIError (IsNotFound) if absent.
 func (c *Client) RemoveBinding(ctx context.Context, src, dst, scenario string) error {
+	if err := c.ensureOpen(); err != nil {
+		return err
+	}
+	if c.useGRPC() {
+		return c.grpcRemoveBinding(ctx, src, dst, scenario)
+	}
 	q := bindingQuery(src, dst, scenario)
 	return c.do(ctx, http.MethodDelete, "/v1/bindings", q, nil, nil)
 }

@@ -1,12 +1,12 @@
 # sdk-go
 
-rbac 授权微服务的官方 Go 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS），仅依赖 Go 标准库。
+rbac 授权微服务的官方 Go 客户端 SDK。封装服务端 `/v1` API，支持 **HTTP / HTTPS** 与 **gRPC / gRPC+TLS**。
 
 ```go
 import rbac "github.com/aid297/rbac/sdk-go"
 ```
 
-要求：Go 1.22+。
+要求：Go **1.25+**（模块级 `go` 指令；HTTP 与 gRPC 共用同一 module，HTTP-only 调用方同样需要 1.25）。gRPC 依赖 `google.golang.org/grpc` 与 protobuf 运行时；纯 HTTP 路径本身仍只使用标准库。
 
 ## 安装
 
@@ -47,6 +47,36 @@ nodes, err := client.Reachable(ctx, "alice", rbac.WithScenarios([]string{"VIP"})
 `Client` 并发安全，可在整个程序中复用一个实例。所有方法都接收 `context.Context`，用于超时与取消。
 
 > **默认超时**：未设置 `WithTimeout` 或 `WithHTTPClient` 时，请求超时默认为 **30 秒**。生产环境建议根据业务显式设置。
+
+## gRPC
+
+与 HTTP 共用同一套方法；用 `NewGRPCClient` 连接服务端 `server.grpc` / `server.grpc_tls` 端口：
+
+```go
+// 明文 gRPC（server.grpc.port，默认 9080）
+client, err := rbac.NewGRPCClient("localhost:9080")
+if err != nil {
+    log.Fatal(err)
+}
+defer client.Close()
+
+allow, err := client.Enforce(ctx, "alice", "doc:42")
+
+// gRPC + TLS（server.grpc_tls.port，默认 9443），信任自签 CA
+client, err = rbac.NewGRPCClient("localhost:9443",
+    rbac.WithCACertFile("secret/ca.crt"),
+)
+```
+
+说明：
+
+- `target` 为 `host:port`，不要写 `http://` / `grpc://`。
+- 未配置 CA / `WithInsecureSkipVerify` 时使用**明文**传输（对应服务端 `grpc.enable`）。
+- 配置了 `WithCACert*` 或 `WithInsecureSkipVerify(true)` 时走 **TLS**（对应 `grpc_tls`）。
+- `WithHTTPClient`、`WithCACertPath` 仅适用于 `NewClient`，与 gRPC 组合会返回错误。
+- gRPC 的 **业务错误**（含暂停）会映射为 `*APIError`，`IsNotFound` / `IsConflict` / `IsPaused` / `IsBadRequest` 与 HTTP 一致。
+- **传输失败**（连不上、超时等，gRPC `Unavailable` / `DeadlineExceeded`）**不会**包装成 `*APIError`，因此 `IsPaused` 为 false——与 HTTP 的 dial 错误行为一致。服务端暂停使用 `FailedPrecondition` → SDK 映射为 503。
+- `Close()` 之后再调用方法会返回 `rbac: client is closed`，不会 panic。
 
 ### 参数说明
 
