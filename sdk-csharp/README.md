@@ -14,7 +14,7 @@ var allow = await client.EnforceAsync("alice", "doc:42");
 ## 安装
 
 ```bash
-dotnet add package Rbac.Sdk.Cs --version 0.1.0
+dotnet add package Rbac.Sdk.Cs --version 0.1.1
 # 或本地 monorepo：
 dotnet add reference ../sdk-csharp/src/Rbac.Sdk/Rbac.Sdk.csproj
 ```

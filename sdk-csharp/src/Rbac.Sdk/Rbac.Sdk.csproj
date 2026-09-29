@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Rbac</RootNamespace>
     <AssemblyName>Rbac.Sdk</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>aid297</Authors>
     <Description>Official .NET client SDK for the rbac authorization microservice /v1 API (HTTP + gRPC)</Description>
     <PackageId>Rbac.Sdk.Cs</PackageId>

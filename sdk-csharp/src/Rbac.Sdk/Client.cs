@@ -15,7 +15,7 @@ namespace Rbac;
 public sealed partial class Client : IDisposable
 {
     /// <summary>SDK version reported in the default User-Agent.</summary>
-    public const string Version = "0.1.0";
+    public const string Version = "0.1.1";
 
     internal const string DefaultUserAgent = "rbac-sdk-csharp/" + Version;
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
