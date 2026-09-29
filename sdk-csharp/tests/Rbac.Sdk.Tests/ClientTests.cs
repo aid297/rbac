@@ -273,6 +273,18 @@ public class ClientTests
     }
 
     [Fact]
+    public void Timeout_NonPositive_Means_Infinite()
+    {
+        using var zero = new Client("http://localhost:8080",
+            new ClientOptions().WithTimeout(TimeSpan.Zero));
+        Assert.Equal(Timeout.InfiniteTimeSpan, zero.HttpTimeout);
+
+        using var infinite = new Client("http://localhost:8080",
+            new ClientOptions().WithTimeout(Timeout.InfiniteTimeSpan));
+        Assert.Equal(Timeout.InfiniteTimeSpan, infinite.HttpTimeout);
+    }
+
+    [Fact]
     public async Task JoinPath_Preserves_Base_Path()
     {
         var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, """{"status":"ok"}"""));

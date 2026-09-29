@@ -56,7 +56,7 @@ public sealed class ClientConfigException : Exception
 }
 
 /// <summary>Status-code predicates mirroring the Go SDK helpers.</summary>
-public static class ApiErrors
+public static partial class ApiErrors
 {
     public static bool IsNotFound(Exception? ex) => IsStatus(ex, HttpStatusCode.NotFound);
     public static bool IsConflict(Exception? ex) => IsStatus(ex, HttpStatusCode.Conflict);

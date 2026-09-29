@@ -8,13 +8,18 @@
     <AssemblyName>Rbac.Sdk</AssemblyName>
     <Version>0.1.0</Version>
     <Authors>aid297</Authors>
-    <Description>Official .NET client SDK for the rbac authorization microservice /v1 API</Description>
+    <Description>Official .NET client SDK for the rbac authorization microservice /v1 API (HTTP + gRPC)</Description>
     <PackageId>Rbac.Sdk.Cs</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/aid297/rbac</RepositoryUrl>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.31.1" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.71.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Rbac.Sdk.Tests" />

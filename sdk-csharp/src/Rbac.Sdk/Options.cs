@@ -84,10 +84,19 @@ public sealed class ClientOptions
         return this;
     }
 
-    /// <summary>Sets the overall request timeout (default 30s). Ignored when <see cref="WithHttpClient"/> is used.</summary>
+    /// <summary>
+    /// Sets the overall request timeout (default 30s). Ignored when <see cref="WithHttpClient"/> is used.
+    /// Values of <see cref="TimeSpan.Zero"/> or negative (including
+    /// <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>) mean no timeout —
+    /// matching gRPC and the Go SDK.
+    /// </summary>
     public ClientOptions WithTimeout(TimeSpan timeout)
     {
-        Timeout = timeout;
+        // HttpClient rejects TimeSpan.Zero and arbitrary negatives; InfiniteTimeSpan is the
+        // .NET equivalent of Go's timeout <= 0 (no deadline).
+        Timeout = timeout <= TimeSpan.Zero
+            ? System.Threading.Timeout.InfiniteTimeSpan
+            : timeout;
         TimeoutSet = true;
         return this;
     }

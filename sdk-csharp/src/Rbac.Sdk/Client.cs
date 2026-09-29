@@ -1,15 +1,18 @@
 using System.Net.Http.Headers;
-using System.Text;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Grpc.Net.Client;
+using Pb = Rbac.V1;
 
 namespace Rbac;
 
 /// <summary>
 /// Concurrency-safe client for the rbac microservice /v1 API.
-/// Construct with <see cref="Create"/> or the constructor overload that accepts <see cref="ClientOptions"/>.
+/// Construct with <see cref="Create"/> (HTTP) or <see cref="CreateGrpc"/> (gRPC).
 /// </summary>
-public sealed class Client : IDisposable
+public sealed partial class Client : IDisposable
 {
     /// <summary>SDK version reported in the default User-Agent.</summary>
     public const string Version = "0.1.0";
@@ -24,21 +27,63 @@ public sealed class Client : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    private readonly Uri _baseUrl;
-    private readonly HttpClient _http;
+    private readonly bool _isGrpc;
+    private readonly Uri? _baseUrl;
+    private readonly HttpClient? _http;
     private readonly bool _ownsHttpClient;
     private readonly string _userAgent;
+    private readonly TimeSpan _timeout;
 
-    /// <summary>Builds a client for <paramref name="baseUrl"/> with default options (30s timeout).</summary>
+    private readonly GrpcChannel? _channel;
+    private readonly Pb.RbacService.RbacServiceClient? _grpc;
+
+    private int _closed; // 0 = open, 1 = closed
+
+    /// <summary>Builds an HTTP client for <paramref name="baseUrl"/> with default options.</summary>
     public static Client Create(string baseUrl) => new(baseUrl, new ClientOptions());
 
-    /// <summary>Builds a client for <paramref name="baseUrl"/> with the given options.</summary>
+    /// <summary>
+    /// Builds a gRPC client for <paramref name="target"/> (<c>host:port</c>).
+    /// Plaintext by default; pass CA / <see cref="ClientOptions.WithInsecureSkipVerify"/> for TLS.
+    /// </summary>
+    public static Client CreateGrpc(string target, ClientOptions? options = null) =>
+        new(target, options ?? new ClientOptions(), grpc: true);
+
+    /// <summary>Builds an HTTP client for <paramref name="baseUrl"/> with the given options.</summary>
     public Client(string baseUrl, ClientOptions? options = null)
+        : this(baseUrl, options ?? new ClientOptions(), grpc: false)
     {
-        options ??= new ClientOptions();
-        var trimmed = (baseUrl ?? "").Trim();
+    }
+
+    private Client(string address, ClientOptions options, bool grpc)
+    {
+        _userAgent = string.IsNullOrEmpty(options.UserAgent) ? DefaultUserAgent : options.UserAgent;
+        _timeout = options.TimeoutSet ? options.Timeout : DefaultTimeout;
+        _isGrpc = grpc;
+
+        if (grpc)
+        {
+            var target = (address ?? "").Trim();
+            if (string.IsNullOrEmpty(target))
+                throw new ClientConfigException("gRPC target must be non-empty");
+            if (target.Contains("://", StringComparison.Ordinal))
+                throw new ClientConfigException(
+                    $"gRPC target must be host:port (got \"{target}\"); use Create for http(s):// URLs");
+            if (options.HttpClientSet)
+                throw new ClientConfigException("WithHttpClient is not supported with CreateGrpc");
+            if (options.CaCertPath != null)
+                throw new ClientConfigException(
+                    "WithCACertPath is not supported with CreateGrpc; use WithCACert/WithCACertFile");
+
+            _channel = BuildGrpcChannel(target, options);
+            _grpc = new Pb.RbacService.RbacServiceClient(_channel);
+            _ownsHttpClient = false;
+            return;
+        }
+
+        var trimmed = (address ?? "").Trim();
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
-            throw new ClientConfigException($"invalid base URL: {baseUrl}");
+            throw new ClientConfigException($"invalid base URL: {address}");
         if (uri.Scheme is not ("http" or "https"))
             throw new ClientConfigException($"base URL scheme must be http or https, got \"{uri.Scheme}\"");
         if (string.IsNullOrEmpty(uri.Host))
@@ -51,19 +96,109 @@ public sealed class Client : IDisposable
         _baseUrl = uri;
         _ownsHttpClient = !options.HttpClientSet;
         _http = options.BuildHttpClient(uri.Scheme, trimmed);
-        _userAgent = string.IsNullOrEmpty(options.UserAgent) ? DefaultUserAgent : options.UserAgent;
+    }
+
+    private static GrpcChannel BuildGrpcChannel(string target, ClientOptions options)
+    {
+        var useTls = options.CaCerts.Count > 0 || options.Insecure;
+        if (!useTls)
+        {
+            // Plaintext HTTP/2 (h2c). GrpcChannel with http:// uses HTTP/2 prior knowledge;
+            // no AppContext.SetSwitch needed on modern .NET.
+            var handler = new SocketsHttpHandler
+            {
+                EnableMultipleHttp2Connections = true,
+                AllowAutoRedirect = false,
+            };
+            return GrpcChannel.ForAddress($"http://{target}", new GrpcChannelOptions
+            {
+                HttpHandler = handler,
+                DisposeHttpClient = true,
+            });
+        }
+
+        var tlsHandler = new SocketsHttpHandler
+        {
+            EnableMultipleHttp2Connections = true,
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = CreateSslCallback(options),
+            },
+        };
+        return GrpcChannel.ForAddress($"https://{target}", new GrpcChannelOptions
+        {
+            HttpHandler = tlsHandler,
+            DisposeHttpClient = true,
+        });
+    }
+
+    private static RemoteCertificateValidationCallback CreateSslCallback(ClientOptions options)
+    {
+        if (options.Insecure && options.CaCerts.Count == 0)
+            return static (_, _, _, _) => true;
+
+        var roots = new X509Certificate2Collection();
+        foreach (var pem in options.CaCerts)
+        {
+            var text = System.Text.Encoding.UTF8.GetString(pem);
+            if (!text.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal))
+                throw new ClientConfigException("failed to parse CA certificate PEM");
+            try
+            {
+                roots.ImportFromPem(text);
+            }
+            catch (Exception ex)
+            {
+                throw new ClientConfigException("failed to parse CA certificate PEM", ex);
+            }
+        }
+        if (roots.Count == 0 && !options.Insecure)
+            throw new ClientConfigException("failed to parse CA certificate PEM");
+
+        var insecure = options.Insecure;
+        return (_, cert, chain, _) =>
+        {
+            if (insecure)
+                return true;
+            if (cert is null || chain is null)
+                return false;
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.Clear();
+            foreach (var c in roots)
+                chain.ChainPolicy.CustomTrustStore.Add(c);
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            return chain.Build(new X509Certificate2(cert));
+        };
+    }
+
+    private void EnsureOpen()
+    {
+        if (Volatile.Read(ref _closed) != 0)
+            throw new ObjectDisposedException(nameof(Client), "rbac: client is closed");
     }
 
     /// <summary>Checks service liveness. Throws <see cref="ApiException"/> (paused) on 503.</summary>
-    public Task HealthAsync(CancellationToken cancellationToken = default) =>
-        DoAsync(HttpMethod.Get, "/healthz", null, null, null, cancellationToken);
+    public Task HealthAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        return _isGrpc ? GrpcHealthAsync(cancellationToken) : DoAsync(HttpMethod.Get, "/healthz", null, null, null, cancellationToken);
+    }
 
     /// <summary>Reports whether subject can reach target under the given options.</summary>
-    public async Task<bool> EnforceAsync(
+    public Task<bool> EnforceAsync(
         string subject,
         string target,
         CallOptions? options = null,
         CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcEnforceAsync(subject, target, options, cancellationToken);
+        return EnforceHttpAsync(subject, target, options, cancellationToken);
+    }
+
+    private async Task<bool> EnforceHttpAsync(
+        string subject, string target, CallOptions? options, CancellationToken cancellationToken)
     {
         options ??= new CallOptions();
         var body = new EnforceRequest
@@ -79,10 +214,19 @@ public sealed class Client : IDisposable
     }
 
     /// <summary>Lists every node subject can reach, including subject itself.</summary>
-    public async Task<IReadOnlyList<string>> ReachableAsync(
+    public Task<IReadOnlyList<string>> ReachableAsync(
         string subject,
         CallOptions? options = null,
         CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcReachableAsync(subject, options, cancellationToken);
+        return ReachableHttpAsync(subject, options, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<string>> ReachableHttpAsync(
+        string subject, CallOptions? options, CancellationToken cancellationToken)
     {
         options ??= new CallOptions();
         var query = new QueryBuilder();
@@ -95,7 +239,13 @@ public sealed class Client : IDisposable
     }
 
     /// <summary>Returns all bindings.</summary>
-    public async Task<IReadOnlyList<Binding>> ListBindingsAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<Binding>> ListBindingsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        return _isGrpc ? GrpcListBindingsAsync(cancellationToken) : ListBindingsHttpAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Binding>> ListBindingsHttpAsync(CancellationToken cancellationToken)
     {
         var result = await DoJsonAsync<BindingsResponse>(
             HttpMethod.Get, "/v1/bindings", null, null, cancellationToken).ConfigureAwait(false);
@@ -103,8 +253,17 @@ public sealed class Client : IDisposable
     }
 
     /// <summary>Fetches a single binding, or throws not-found <see cref="ApiException"/>.</summary>
-    public async Task<Binding> GetBindingAsync(
+    public Task<Binding> GetBindingAsync(
         string src, string dst, string scenario, CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcGetBindingAsync(src, dst, scenario, cancellationToken);
+        return GetBindingHttpAsync(src, dst, scenario, cancellationToken);
+    }
+
+    private async Task<Binding> GetBindingHttpAsync(
+        string src, string dst, string scenario, CancellationToken cancellationToken)
     {
         var result = await DoJsonAsync<Binding>(
             HttpMethod.Get, "/v1/bindings", BindingQuery(src, dst, scenario), null, cancellationToken)
@@ -113,7 +272,15 @@ public sealed class Client : IDisposable
     }
 
     /// <summary>Creates a binding. Duplicate → conflict <see cref="ApiException"/>.</summary>
-    public async Task<Binding> AddBindingAsync(Binding binding, CancellationToken cancellationToken = default)
+    public Task<Binding> AddBindingAsync(Binding binding, CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcAddBindingAsync(binding, cancellationToken);
+        return AddBindingHttpAsync(binding, cancellationToken);
+    }
+
+    private async Task<Binding> AddBindingHttpAsync(Binding binding, CancellationToken cancellationToken)
     {
         var result = await DoJsonAsync<Binding>(
             HttpMethod.Post, "/v1/bindings", null, binding, cancellationToken).ConfigureAwait(false);
@@ -121,7 +288,15 @@ public sealed class Client : IDisposable
     }
 
     /// <summary>Replaces an existing binding. Missing → not-found (not created).</summary>
-    public async Task<Binding> UpdateBindingAsync(Binding binding, CancellationToken cancellationToken = default)
+    public Task<Binding> UpdateBindingAsync(Binding binding, CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcUpdateBindingAsync(binding, cancellationToken);
+        return UpdateBindingHttpAsync(binding, cancellationToken);
+    }
+
+    private async Task<Binding> UpdateBindingHttpAsync(Binding binding, CancellationToken cancellationToken)
     {
         var result = await DoJsonAsync<Binding>(
             HttpMethod.Put, "/v1/bindings", null, binding, cancellationToken).ConfigureAwait(false);
@@ -133,6 +308,9 @@ public sealed class Client : IDisposable
         string src, string dst, string scenario, bool enabled,
         CancellationToken cancellationToken = default)
     {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcSetEnabledAsync(src, dst, scenario, enabled, cancellationToken);
         var body = new SetEnabledRequest
         {
             Src = src,
@@ -145,8 +323,13 @@ public sealed class Client : IDisposable
 
     /// <summary>Deletes a binding, or throws not-found <see cref="ApiException"/>.</summary>
     public Task RemoveBindingAsync(
-        string src, string dst, string scenario, CancellationToken cancellationToken = default) =>
-        DoAsync(HttpMethod.Delete, "/v1/bindings", BindingQuery(src, dst, scenario), null, null, cancellationToken);
+        string src, string dst, string scenario, CancellationToken cancellationToken = default)
+    {
+        EnsureOpen();
+        if (_isGrpc)
+            return GrpcRemoveBindingAsync(src, dst, scenario, cancellationToken);
+        return DoAsync(HttpMethod.Delete, "/v1/bindings", BindingQuery(src, dst, scenario), null, null, cancellationToken);
+    }
 
     private async Task<T?> DoJsonAsync<T>(
         HttpMethod method, string path, string? query, object? body, CancellationToken ct)
@@ -180,7 +363,7 @@ public sealed class Client : IDisposable
         Func<byte[], Task>? onOk,
         CancellationToken ct)
     {
-        var uri = JoinPath(_baseUrl, path);
+        var uri = JoinPath(_baseUrl!, path);
         if (!string.IsNullOrEmpty(query))
         {
             var ub = new UriBuilder(uri) { Query = query.TrimStart('?') };
@@ -199,7 +382,7 @@ public sealed class Client : IDisposable
             req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         }
 
-        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct)
+        using var resp = await _http!.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
         {
             var data = await ReadLimitedAsync(resp.Content, ct).ConfigureAwait(false);
@@ -270,14 +453,39 @@ public sealed class Client : IDisposable
     private static string FormatTime(DateTimeOffset t) =>
         t.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Safe to call concurrently with in-flight RPCs. Does not null internal
+    /// gRPC fields (avoids races); subsequent calls throw <see cref="ObjectDisposedException"/>.
+    /// </remarks>
     public void Dispose()
     {
-        if (_ownsHttpClient)
-            _http.Dispose();
+        if (Interlocked.Exchange(ref _closed, 1) != 0)
+            return;
+        if (_isGrpc)
+            _channel?.Dispose();
+        else if (_ownsHttpClient)
+            _http?.Dispose();
     }
 
-    // Expose timeout for tests when we own the client.
-    internal TimeSpan HttpTimeout => _http.Timeout;
+    // Expose timeout for tests when we own the HTTP client.
+    internal TimeSpan HttpTimeout => _http?.Timeout ?? _timeout;
+
+    /// <summary>Test helper: gRPC client over an already-open channel (caller owns dispose of channel via Client.Dispose).</summary>
+    internal static Client CreateGrpcForTests(GrpcChannel channel, TimeSpan? timeout = null)
+    {
+        return new Client(channel, timeout ?? DefaultTimeout);
+    }
+
+    private Client(GrpcChannel channel, TimeSpan timeout)
+    {
+        _isGrpc = true;
+        _channel = channel;
+        _grpc = new Pb.RbacService.RbacServiceClient(channel);
+        _timeout = timeout;
+        _userAgent = DefaultUserAgent;
+        _ownsHttpClient = false;
+    }
 
     private sealed class QueryBuilder
     {

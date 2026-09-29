@@ -1,6 +1,6 @@
 # sdk-csharp
 
-rbac 授权微服务的官方 .NET / C# 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS），对应 Go 侧的 [`sdk-go`](../sdk-go/)。
+rbac 授权微服务的官方 .NET / C# 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS）与 gRPC，对应 Go 侧的 [`sdk-go`](../sdk-go/)。
 
 ```csharp
 using Rbac;
@@ -9,7 +9,7 @@ using var client = Client.Create("http://localhost:8080");
 var allow = await client.EnforceAsync("alice", "doc:42");
 ```
 
-要求：.NET 10（`net10.0`）。包名 `Rbac.Sdk.Cs`，命名空间 `Rbac`。
+要求：.NET 10（`net10.0`）。包名 `Rbac.Sdk.Cs`，命名空间 `Rbac`。HTTP 与 gRPC 共用同一套 API；gRPC 依赖 `Grpc.Net.Client` 与 `Google.Protobuf`（桩代码已提交在 `src/Rbac.Sdk/Generated/`，工程可独立构建，无需 `server/` 或 `protoc`）。
 
 ## 安装
 
@@ -45,7 +45,31 @@ var nodes = await client.ReachableAsync("alice", new CallOptions().WithScenarios
 Console.WriteLine($"可达节点: {string.Join(", ", nodes)}");
 ```
 
-`Client` 可在多线程间复用。默认请求超时 **30 秒**。方法均支持 `CancellationToken`。
+`Client` 可在多线程间复用。默认请求超时 **30 秒**。方法均支持 `CancellationToken`。用完后应 `Dispose`（HTTP 释放自建 `HttpClient`；gRPC 关闭 channel）。
+
+### gRPC
+
+与 HTTP 共用同一套方法；用 `CreateGrpc` 连接服务端 `server.grpc` / `server.grpc_tls` 端口：
+
+```csharp
+// 明文 gRPC（server.grpc.port，默认 9080）
+using var client = Client.CreateGrpc("localhost:9080");
+
+// gRPC + TLS（server.grpc_tls.port，默认 9443），信任自签 CA
+using var tlsClient = Client.CreateGrpc("localhost:9443",
+    new ClientOptions().WithCACertFile("secret/ca.crt"));
+
+// 或跳过校验（仅测试）
+using var insecure = Client.CreateGrpc("localhost:9443",
+    new ClientOptions().WithInsecureSkipVerify(true));
+```
+
+- `target` 为 `host:port`，不要写 `http://` / `grpc://`。
+- 未配置 CA / `WithInsecureSkipVerify` 时使用**明文**传输（对应服务端 `grpc.enable`）。
+- 配置了 `WithCACert*` 或 `WithInsecureSkipVerify(true)` 时走 **TLS**（对应 `grpc_tls`）。
+- `WithHttpClient` / `WithCACertPath` 不支持 gRPC 构造（与 Go SDK 一致）。
+
+gRPC 错误映射为与 HTTP 相同的 `ApiException` / `ApiErrors` 谓词。服务暂停为 `FailedPrecondition` → 503（`IsPaused`）；传输层 `Unavailable` **不会**包装为 `ApiException`，也不会被 `IsPaused` 命中。可用 `ApiErrors.IsGrpc` 区分 gRPC 路径错误。
 
 ### 参数说明
 
@@ -171,7 +195,7 @@ using var client = new Client("https://localhost:8443",
 | `WithCACertPath(path)` | **自动管理 CA 证书**：检查本地路径是否存在，缺失时从服务端 `/v1/ca-cert` 下载并缓存；下载失败重试一次 | 生产环境推荐，自动化证书管理 |
 | `WithInsecureSkipVerify(bool)` | 跳过 TLS 校验（仅测试）；仅对 `https://` 生效 | 开发/测试环境快速调试 |
 | `WithUserAgent(string)` | 覆盖默认 User-Agent（默认 `rbac-sdk-csharp/<version>`） | 需要自定义请求头标识 |
-| `WithTimeout(TimeSpan)` | 请求超时（默认 30s） | 根据业务需求调整超时时间 |
+| `WithTimeout(TimeSpan)` | 请求超时（默认 30s）。`TimeSpan.Zero` / 负值（含 `Timeout.InfiniteTimeSpan`）表示不设超时 | 根据业务需求调整超时时间 |
 
 调用级选项（用于 `EnforceAsync` / `ReachableAsync`）：
 
@@ -398,6 +422,13 @@ Console.WriteLine($"可达节点: {string.Join(", ", nodes)}");
 ```bash
 cd sdk-csharp
 dotnet test
+```
+
+gRPC 桩自包含于 `src/Rbac.Sdk/Generated/`（对应 `proto/rbac/v1/rbac.proto`）。在 monorepo 内同步服务端 proto 并重新生成：
+
+```bash
+cp ../server/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
+make proto
 ```
 
 ## 许可
