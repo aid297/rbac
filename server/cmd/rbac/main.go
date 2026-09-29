@@ -16,10 +16,12 @@ import (
 	"github.com/aid297/rbac/server/adminui"
 	"github.com/aid297/rbac/server/cache"
 	"github.com/aid297/rbac/server/config"
+	"github.com/aid297/rbac/server/grpcsvc"
 	"github.com/aid297/rbac/server/httpsvc"
 	"github.com/aid297/rbac/server/logging"
 	"github.com/aid297/rbac/server/persist"
 	"github.com/aid297/rbac/server/pki"
+	"github.com/aid297/rbac/server/svcctl"
 )
 
 func main() {
@@ -79,11 +81,23 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	opt := httpsvc.Options{CACertPEM: caCertPEM}
+	needTLS := cfg.HTTPSEnabled() || cfg.GRPCTLSEnabled()
+
+	httpOpt := httpsvc.Options{CACertPEM: caCertPEM}
+	grpcOpt := grpcsvc.Options{CACertPEM: caCertPEM}
 	if cfg.HTTPEnabled() {
-		opt.HTTPAddr = cfg.HTTPAddr()
+		httpOpt.HTTPAddr = cfg.HTTPAddr()
 	}
 	if cfg.HTTPSEnabled() {
+		httpOpt.HTTPSAddr = cfg.HTTPSAddr()
+	}
+	if cfg.GRPCEnabled() {
+		grpcOpt.Addr = cfg.GRPCAddr()
+	}
+	if cfg.GRPCTLSEnabled() {
+		grpcOpt.TLSAddr = cfg.GRPCTLSAddr()
+	}
+	if needTLS {
 		srv, err := pki.EnsureServer(ca, cfg.CADir(), cfg.HTTPHost())
 		if err != nil {
 			logger.Fatal("ensure server cert failed", zap.Error(err))
@@ -92,8 +106,21 @@ func main() {
 		if err != nil {
 			logger.Fatal("read TLS certificate failed", zap.Error(err))
 		}
-		opt.HTTPSAddr = cfg.HTTPSAddr()
-		opt.TLSCert = &tlsCert
+		if cfg.HTTPSEnabled() {
+			httpOpt.TLSCert = &tlsCert
+		}
+		if cfg.GRPCTLSEnabled() {
+			grpcOpt.TLSCert = &tlsCert
+		}
+	}
+
+	gate := new(svcctl.Gate)
+	apiOn := cfg.HTTPEnabled() || cfg.HTTPSEnabled() || cfg.GRPCEnabled() || cfg.GRPCTLSEnabled()
+	if apiOn {
+		persist.SetServiceControl(gate)
+		defer persist.SetServiceControl(nil)
+		httpOpt.Gate = gate
+		grpcOpt.Gate = gate
 	}
 
 	logger.Info("rbac server starting",
@@ -107,14 +134,18 @@ func main() {
 		zap.Bool("cache", cfg.CacheEnabled()),
 		zap.Bool("http", cfg.HTTPEnabled()),
 		zap.Bool("https", cfg.HTTPSEnabled()),
+		zap.Bool("grpc", cfg.GRPCEnabled()),
+		zap.Bool("grpc_tls", cfg.GRPCTLSEnabled()),
 		zap.Bool("admin", cfg.AdminEnabled()),
-		zap.String("http_addr", opt.HTTPAddr),
-		zap.String("https_addr", opt.HTTPSAddr),
+		zap.String("http_addr", httpOpt.HTTPAddr),
+		zap.String("https_addr", httpOpt.HTTPSAddr),
+		zap.String("grpc_addr", grpcOpt.Addr),
+		zap.String("grpc_tls_addr", grpcOpt.TLSAddr),
 		zap.String("admin_addr", cfg.AdminAddr()),
 		zap.Int("bindings", len(store.ListBindings())),
 	)
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 4)
 	var wg sync.WaitGroup
 	run := func(fn func() error) {
 		wg.Add(1)
@@ -148,7 +179,11 @@ func main() {
 	}
 	if cfg.HTTPEnabled() || cfg.HTTPSEnabled() {
 		n++
-		run(func() error { return httpsvc.Serve(ctx, store, opt) })
+		run(func() error { return httpsvc.Serve(ctx, store, httpOpt) })
+	}
+	if cfg.GRPCEnabled() || cfg.GRPCTLSEnabled() {
+		n++
+		run(func() error { return grpcsvc.Serve(ctx, store, grpcOpt) })
 	}
 
 	if n == 0 {

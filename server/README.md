@@ -14,7 +14,7 @@
   - 同类条件之间 **OR**，不同类条件之间 **AND**；`ALL` 不可与其他条件混用。
 - **场景维度**：边可绑定 `scenario`，查询时传入场景列表进行匹配。
 - **启用/禁用**：每条边可单独 `enabled` 开关，无需删除。
-- **多种访问方式**：HTTP、HTTPS（自签 CA 自动生成）、管理预览页（Basic Auth）。
+- **多种访问方式**：HTTP、HTTPS（自签 CA）、gRPC、gRPC+TLS、管理预览页（Basic Auth）。
 - **持久化与缓存**：策略文件为唯一事实来源；可选 Redis 副本加速读取，写入即时进 Redis、异步落盘。
 - **静态加密**：策略文件可选 AES-256-GCM / AES-128-GCM / SM4 加密，支持密钥轮换（旧密钥迁移）。
 - **写时复制内核**：策略图采用 COW 不可变快照 + 原子指针，读路径无锁，写路径串行化。
@@ -31,7 +31,10 @@
 | `config` | 基于 viper 的配置加载、默认值补全、密钥/CA 落地、配置热加载 |
 | `pki` | 自签 CA 与服务端 TLS 证书生成 |
 | `httpsvc` | 对外 HTTP / HTTPS REST API |
+| `grpcsvc` | 对外 gRPC / gRPC+TLS API（与 `/v1` 语义对齐） |
+| `api/proto` | protobuf 定义（`rbac.v1`） |
 | `adminui` | 管理预览页（HTML + 只读 JSON API，Basic Auth） |
+| `svcctl` | HTTP/gRPC 共享的 in-flight 引流门闩 |
 
 ## 快速开始
 
@@ -83,8 +86,10 @@ admin:
 | `ca.dir` | CA 目录，文件名固定 `ca.crt` / `ca.key`；缺失则启动时生成 | `secret` |
 | `cache.enable` / `cache.kind` | 开启 Redis 副本（`kind: redis`） | `false` |
 | `cache.addr` / `cache.db` | Redis 地址与库号 | `127.0.0.1:6379` / `0` |
-| `server.http.*` | HTTP 监听开关、host、port；host 同时用作 HTTPS 证书 SAN | 关闭 / `0.0.0.0` / `8080` |
+| `server.http.*` | HTTP 监听开关、host、port；host 同时用作 HTTPS/gRPC-TLS 证书 SAN | 关闭 / `0.0.0.0` / `8080` |
 | `server.https.*` | HTTPS 监听开关与端口（TLS 证书由内置 CA 签发） | 关闭 / `8443` |
+| `server.grpc.*` | 明文 gRPC 监听开关与端口 | 关闭 / `9080` |
+| `server.grpc_tls.*` | gRPC+TLS 监听开关与端口（复用 HTTPS 同款服务端证书） | 关闭 / `9443` |
 | `admin.*` | 管理页开关、Basic Auth 用户名/密码、host、port | 关闭 / `admin` / `admin` / `127.0.0.1:9090` |
 
 环境变量：
@@ -113,6 +118,40 @@ admin:
 | `PUT` | `/v1/bindings` | 更新已存在的边（不存在返回 `404`，不会新增） |
 | `PATCH` | `/v1/bindings/enabled` | 启用/禁用某条边 |
 | `DELETE` | `/v1/bindings` | 删除边（`?src=&dst=&scenario=`，不存在返回 `404`） |
+
+## gRPC API
+
+服务定义见 [`api/proto/rbac/v1/rbac.proto`](api/proto/rbac/v1/rbac.proto)，生成代码在 `api/gen/rbac/v1/`。语义与上表 HTTP `/v1`（含 `/healthz`、`/v1/ca-cert`）一一对应：
+
+| RPC | 对应 HTTP | 典型错误码 |
+| --- | --- | --- |
+| `Health` | `GET /healthz` | 暂停 → `FAILED_PRECONDITION`（SDK 映射为 503；与传输层 `UNAVAILABLE` 区分） |
+| `GetCACert` | `GET /v1/ca-cert` | |
+| `Enforce` | `POST /v1/enforce` | |
+| `Reachable` | `GET /v1/reachable` | |
+| `ListBindings` / `GetBinding` | `GET /v1/bindings` | 缺失 → `NOT_FOUND` |
+| `AddBinding` | `POST /v1/bindings` | 重复 → `ALREADY_EXISTS` |
+| `UpdateBinding` | `PUT /v1/bindings` | 缺失 → `NOT_FOUND` |
+| `SetEnabled` | `PATCH /v1/bindings/enabled` | |
+| `RemoveBinding` | `DELETE /v1/bindings` | 缺失 → `NOT_FOUND` |
+
+开启示例：
+
+```yaml
+server:
+  grpc:
+    enable: true
+    port: 9080
+  grpc_tls:
+    enable: true
+    port: 9443
+```
+
+重新生成 stub（需本机 `protoc`、`protoc-gen-go`、`protoc-gen-go-grpc`）：
+
+```bash
+make proto
+```
 
 ### 判定权限
 

@@ -25,6 +25,8 @@ const (
 	DefaultFileName      = "config.yaml"
 	DefaultHTTPPort      = 8080
 	DefaultHTTPSPort     = 8443
+	DefaultGRPCPort      = 9080
+	DefaultGRPCTLSPort   = 9443
 	DefaultHTTPHost      = "0.0.0.0"
 	DefaultAdminUser     = "admin"
 	DefaultAdminPassword = "admin"
@@ -78,8 +80,10 @@ type Cache struct {
 }
 
 type Server struct {
-	HTTP  HTTPEndpoint  `mapstructure:"http"`
-	HTTPS HTTPSEndpoint `mapstructure:"https"`
+	HTTP    HTTPEndpoint    `mapstructure:"http"`
+	HTTPS   HTTPSEndpoint   `mapstructure:"https"`
+	GRPC    GRPCEndpoint    `mapstructure:"grpc"`
+	GRPCTLS GRPCTLSEndpoint `mapstructure:"grpc_tls"`
 }
 
 type HTTPEndpoint struct {
@@ -89,6 +93,18 @@ type HTTPEndpoint struct {
 }
 
 type HTTPSEndpoint struct {
+	Enable bool `mapstructure:"enable"`
+	Port   int  `mapstructure:"port"`
+}
+
+// GRPCEndpoint is plaintext gRPC (h2c). Host defaults to server.http.host.
+type GRPCEndpoint struct {
+	Enable bool `mapstructure:"enable"`
+	Port   int  `mapstructure:"port"`
+}
+
+// GRPCTLSEndpoint is gRPC over TLS, reusing the HTTPS server certificate.
+type GRPCTLSEndpoint struct {
 	Enable bool `mapstructure:"enable"`
 	Port   int  `mapstructure:"port"`
 }
@@ -148,6 +164,14 @@ func (c *Config) HTTPSEnabled() bool {
 	return c != nil && c.Server.HTTPS.Enable
 }
 
+func (c *Config) GRPCEnabled() bool {
+	return c != nil && c.Server.GRPC.Enable
+}
+
+func (c *Config) GRPCTLSEnabled() bool {
+	return c != nil && c.Server.GRPCTLS.Enable
+}
+
 func (c *Config) HTTPHost() string {
 	if c == nil || strings.TrimSpace(c.Server.HTTP.Host) == "" {
 		return DefaultHTTPHost
@@ -169,12 +193,34 @@ func (c *Config) HTTPSPort() int {
 	return c.Server.HTTPS.Port
 }
 
+func (c *Config) GRPCPort() int {
+	if c == nil || c.Server.GRPC.Port == 0 {
+		return DefaultGRPCPort
+	}
+	return c.Server.GRPC.Port
+}
+
+func (c *Config) GRPCTLSPort() int {
+	if c == nil || c.Server.GRPCTLS.Port == 0 {
+		return DefaultGRPCTLSPort
+	}
+	return c.Server.GRPCTLS.Port
+}
+
 func (c *Config) HTTPAddr() string {
 	return net.JoinHostPort(c.HTTPHost(), fmt.Sprintf("%d", c.HTTPPort()))
 }
 
 func (c *Config) HTTPSAddr() string {
 	return net.JoinHostPort(c.HTTPHost(), fmt.Sprintf("%d", c.HTTPSPort()))
+}
+
+func (c *Config) GRPCAddr() string {
+	return net.JoinHostPort(c.HTTPHost(), fmt.Sprintf("%d", c.GRPCPort()))
+}
+
+func (c *Config) GRPCTLSAddr() string {
+	return net.JoinHostPort(c.HTTPHost(), fmt.Sprintf("%d", c.GRPCTLSPort()))
 }
 
 func (c *Config) AdminEnabled() bool {
@@ -299,6 +345,10 @@ func Load(flagPath string) (*Config, error) {
 	v.SetDefault("server.http.port", DefaultHTTPPort)
 	v.SetDefault("server.https.enable", false)
 	v.SetDefault("server.https.port", DefaultHTTPSPort)
+	v.SetDefault("server.grpc.enable", false)
+	v.SetDefault("server.grpc.port", DefaultGRPCPort)
+	v.SetDefault("server.grpc_tls.enable", false)
+	v.SetDefault("server.grpc_tls.port", DefaultGRPCTLSPort)
 	v.SetDefault("admin.enable", false)
 	v.SetDefault("admin.username", DefaultAdminUser)
 	v.SetDefault("admin.password", DefaultAdminPassword)
@@ -320,8 +370,10 @@ func Load(flagPath string) (*Config, error) {
 			Addr:   cache.DefaultAddr,
 		},
 		Server: Server{
-			HTTP:  HTTPEndpoint{Host: DefaultHTTPHost, Port: DefaultHTTPPort},
-			HTTPS: HTTPSEndpoint{Port: DefaultHTTPSPort},
+			HTTP:    HTTPEndpoint{Host: DefaultHTTPHost, Port: DefaultHTTPPort},
+			HTTPS:   HTTPSEndpoint{Port: DefaultHTTPSPort},
+			GRPC:    GRPCEndpoint{Port: DefaultGRPCPort},
+			GRPCTLS: GRPCTLSEndpoint{Port: DefaultGRPCTLSPort},
 		},
 		Admin: Admin{
 			Username: DefaultAdminUser,
@@ -365,6 +417,12 @@ func Load(flagPath string) (*Config, error) {
 		if cfg.Server.HTTPS.Port == 0 {
 			cfg.Server.HTTPS.Port = DefaultHTTPSPort
 		}
+		if cfg.Server.GRPC.Port == 0 {
+			cfg.Server.GRPC.Port = DefaultGRPCPort
+		}
+		if cfg.Server.GRPCTLS.Port == 0 {
+			cfg.Server.GRPCTLS.Port = DefaultGRPCTLSPort
+		}
 	}
 
 	if err := cfg.validateCache(); err != nil {
@@ -399,11 +457,20 @@ func (c *Config) validateServer() error {
 	if c == nil {
 		return nil
 	}
-	if c.Server.HTTP.Port < 0 || c.Server.HTTP.Port > 65535 {
-		return fmt.Errorf("config: server.http.port out of range")
+	ports := []struct {
+		name string
+		port int
+	}{
+		{"server.http.port", c.Server.HTTP.Port},
+		{"server.https.port", c.Server.HTTPS.Port},
+		{"server.grpc.port", c.Server.GRPC.Port},
+		{"server.grpc_tls.port", c.Server.GRPCTLS.Port},
+		{"admin.port", c.Admin.Port},
 	}
-	if c.Server.HTTPS.Port < 0 || c.Server.HTTPS.Port > 65535 {
-		return fmt.Errorf("config: server.https.port out of range")
+	for _, p := range ports {
+		if p.port < 0 || p.port > 65535 {
+			return fmt.Errorf("config: %s out of range", p.name)
+		}
 	}
 	if c.Server.HTTP.Port == 0 {
 		c.Server.HTTP.Port = DefaultHTTPPort
@@ -411,14 +478,14 @@ func (c *Config) validateServer() error {
 	if c.Server.HTTPS.Port == 0 {
 		c.Server.HTTPS.Port = DefaultHTTPSPort
 	}
+	if c.Server.GRPC.Port == 0 {
+		c.Server.GRPC.Port = DefaultGRPCPort
+	}
+	if c.Server.GRPCTLS.Port == 0 {
+		c.Server.GRPCTLS.Port = DefaultGRPCTLSPort
+	}
 	if strings.TrimSpace(c.Server.HTTP.Host) == "" {
 		c.Server.HTTP.Host = DefaultHTTPHost
-	}
-	if c.HTTPEnabled() && c.HTTPSEnabled() && c.HTTPPort() == c.HTTPSPort() {
-		return fmt.Errorf("config: server.http.port and server.https.port must differ")
-	}
-	if c.Admin.Port < 0 || c.Admin.Port > 65535 {
-		return fmt.Errorf("config: admin.port out of range")
 	}
 	if c.Admin.Port == 0 {
 		c.Admin.Port = DefaultAdminPort
@@ -426,11 +493,32 @@ func (c *Config) validateServer() error {
 	if strings.TrimSpace(c.Admin.Host) == "" {
 		c.Admin.Host = DefaultAdminHost
 	}
-	if c.AdminEnabled() && c.HTTPEnabled() && c.AdminPort() == c.HTTPPort() && c.AdminHost() == c.HTTPHost() {
-		return fmt.Errorf("config: admin.port must differ from server.http.port on the same host")
+
+	type ep struct {
+		on   bool
+		host string
+		port int
+		name string
 	}
-	if c.AdminEnabled() && c.HTTPSEnabled() && c.AdminPort() == c.HTTPSPort() && c.AdminHost() == c.HTTPHost() {
-		return fmt.Errorf("config: admin.port must differ from server.https.port on the same host")
+	eps := []ep{
+		{c.HTTPEnabled(), c.HTTPHost(), c.HTTPPort(), "server.http"},
+		{c.HTTPSEnabled(), c.HTTPHost(), c.HTTPSPort(), "server.https"},
+		{c.GRPCEnabled(), c.HTTPHost(), c.GRPCPort(), "server.grpc"},
+		{c.GRPCTLSEnabled(), c.HTTPHost(), c.GRPCTLSPort(), "server.grpc_tls"},
+		{c.AdminEnabled(), c.AdminHost(), c.AdminPort(), "admin"},
+	}
+	for i := 0; i < len(eps); i++ {
+		if !eps[i].on {
+			continue
+		}
+		for j := i + 1; j < len(eps); j++ {
+			if !eps[j].on {
+				continue
+			}
+			if eps[i].port == eps[j].port && eps[i].host == eps[j].host {
+				return fmt.Errorf("config: %s and %s bind the same host:port", eps[i].name, eps[j].name)
+			}
+		}
 	}
 	return nil
 }
@@ -541,11 +629,12 @@ func parseKey(s string, want int) ([]byte, error) {
 }
 
 func (c *Config) writeFile() error {
-	body := fmt.Sprintf("log:\n  level: %s\n  file: %s\n  debug: %t\npolicy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\nserver:\n  http:\n    enable: %t\n    host: %s\n    port: %d\n  https:\n    enable: %t\n    port: %d\nadmin:\n  enable: %t\n  username: %s\n  password: %s\n  host: %s\n  port: %d\n",
+	body := fmt.Sprintf("log:\n  level: %s\n  file: %s\n  debug: %t\npolicy:\n  dir: %s\n  encrypt: %t\n  crypto: %s\n  key: %s\nca:\n  dir: %s\ncache:\n  enable: %t\n  kind: %s\n  addr: %s\n  password: %s\n  db: %d\nserver:\n  http:\n    enable: %t\n    host: %s\n    port: %d\n  https:\n    enable: %t\n    port: %d\n  grpc:\n    enable: %t\n    port: %d\n  grpc_tls:\n    enable: %t\n    port: %d\nadmin:\n  enable: %t\n  username: %s\n  password: %s\n  host: %s\n  port: %d\n",
 		c.LogLevel(), c.LogFile(), c.LogDebug(),
 		c.Policy.Dir, c.EncryptEnabled(), c.Policy.Crypto, c.Policy.Key, c.CADir(),
 		c.Cache.Enable, c.cacheKind(), c.cacheAddr(), c.Cache.Password, c.Cache.DB,
 		c.HTTPEnabled(), c.HTTPHost(), c.HTTPPort(), c.HTTPSEnabled(), c.HTTPSPort(),
+		c.GRPCEnabled(), c.GRPCPort(), c.GRPCTLSEnabled(), c.GRPCTLSPort(),
 		c.AdminEnabled(), c.AdminUsername(), c.AdminPassword(), c.AdminHost(), c.AdminPort())
 	dir := filepath.Dir(c.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

@@ -6,36 +6,24 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/server/svcctl"
 )
 
+// Options configures HTTP and/or HTTPS listeners.
 type Options struct {
-	HTTPAddr   string
-	HTTPSAddr  string
-	TLSCert    *tls.Certificate
-	CACertPEM  []byte // PEM-encoded CA certificate for /v1/ca-cert endpoint
-}
-
-type gate struct {
-	inflight sync.WaitGroup
-}
-
-func (g *gate) Pause(string) error {
-	g.inflight.Wait()
-	return nil
-}
-
-func (g *gate) Resume() error { return nil }
-
-func (g *gate) wrap(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		g.inflight.Add(1)
-		defer g.inflight.Done()
-		next.ServeHTTP(w, r)
-	})
+	HTTPAddr  string
+	HTTPSAddr string
+	TLSCert   *tls.Certificate
+	CACertPEM []byte // PEM-encoded CA certificate for /v1/ca-cert endpoint
+	// Gate tracks in-flight requests for persist.ServiceControl.Pause.
+	// If nil and OwnServiceControl is true, a private gate is created and registered.
+	Gate *svcctl.Gate
+	// OwnServiceControl registers Gate (or a private one) with persist when true.
+	// Prefer sharing one Gate from main when HTTP and gRPC both run.
+	OwnServiceControl bool
 }
 
 // Serve runs HTTP and/or HTTPS until ctx is cancelled. Empty addrs are skipped.
@@ -50,11 +38,17 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 		return fmt.Errorf("httpsvc: TLS certificate required for HTTPS")
 	}
 
-	g := new(gate)
-	persist.SetServiceControl(g)
-	defer persist.SetServiceControl(nil)
+	gate := opt.Gate
+	if gate == nil {
+		gate = new(svcctl.Gate)
+		persist.SetServiceControl(gate)
+		defer persist.SetServiceControl(nil)
+	} else if opt.OwnServiceControl {
+		persist.SetServiceControl(gate)
+		defer persist.SetServiceControl(nil)
+	}
 
-	h := g.wrap(NewHandler(store, opt.CACertPEM))
+	h := wrapGate(gate, NewHandler(store, opt.CACertPEM))
 	var servers []*http.Server
 	errCh := make(chan error, 2)
 
@@ -92,6 +86,14 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 		}
 		return err
 	}
+}
+
+func wrapGate(g *svcctl.Gate, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		done := g.Track()
+		defer done()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newHTTPServer(addr string, h http.Handler) *http.Server {

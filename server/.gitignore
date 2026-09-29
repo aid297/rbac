@@ -7,6 +7,9 @@
 /rbac
 /cmd/rbac/rbac
 
+# Cross-compiled release binaries (e.g. darwin-arm64.rbac)
+/cmd/rbac/*.rbac
+
 # Test binary, built with `go test -c`
 *.test
 

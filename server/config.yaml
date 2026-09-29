@@ -23,6 +23,12 @@ server:
   https:
     enable: false
     port: 8443
+  grpc:
+    enable: false
+    port: 9080
+  grpc_tls:
+    enable: false
+    port: 9443
 admin:
   enable: false
   username: admin
