@@ -1,6 +1,6 @@
 # sdk-rust
 
-rbac 授权微服务的官方 Rust 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS），对应 Go 侧的 [`sdk-go`](../sdk-go/)。
+rbac 授权微服务的官方 Rust 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS）与 gRPC，对应 Go 侧的 [`sdk-go`](../sdk-go/)。
 
 ```rust
 use rbac::{CallOpts, Client};
@@ -9,14 +9,14 @@ let client = Client::new("http://localhost:8080")?;
 let allow = client.enforce("alice", "doc:42", CallOpts::default())?;
 ```
 
-要求：Rust 1.70+（edition 2021）。crate 名 `rbac-sdk`，库名 `rbac`。
+要求：Rust **1.75+**（edition 2021）。crate 名 `rbac-sdk-rs`，库名 `rbac`。HTTP 与 gRPC 共用同一套方法；gRPC 依赖 `tonic` / `prost`（proto 已 vendored 在 `proto/`，`build.rs` 生成桩，无需兄弟目录 `server/`）。
 
 ## 安装
 
 ```toml
 [dependencies]
-rbac-sdk = { path = "../sdk-rust" }   # 本地 monorepo
-# 或将来：rbac-sdk = "0.1"
+rbac-sdk-rs = { path = "../sdk-rust" }   # 本地 monorepo
+# 或 crates.io：rbac-sdk-rs = "0.1"
 ```
 
 ## 快速开始
@@ -51,7 +51,34 @@ fn main() -> Result<(), Error> {
 }
 ```
 
-`Client` 内部使用 `Arc`，可在多线程间克隆复用。默认请求超时 **30 秒**。
+`Client` 内部使用 `Arc`，可在多线程间克隆复用。默认请求超时 **30 秒**。gRPC 客户端用完后可调用 `close()`（HTTP 为 no-op）。
+
+### gRPC
+
+与 HTTP 共用同一套方法；用 `Client::new_grpc` 连接服务端 `server.grpc` / `server.grpc_tls` 端口：
+
+```rust
+// 明文 gRPC（server.grpc.port，默认 9080）
+let client = Client::new_grpc("localhost:9080")?;
+
+// gRPC + TLS（server.grpc_tls.port，默认 9443），信任自签 CA
+let client = Client::grpc_builder("localhost:9443")?
+    .ca_cert_file("secret/ca.crt")?
+    .build()?;
+
+// 或跳过校验（仅测试）
+let client = Client::grpc_builder("localhost:9443")?
+    .insecure_skip_verify(true)
+    .build()?;
+```
+
+- `target` 为 `host:port`，不要写 `http://` / `grpc://`。
+- 未配置 CA / `insecure_skip_verify` 时使用**明文**传输（对应服务端 `grpc.enable`）。
+- 配置了 `ca_cert*` 或 `insecure_skip_verify(true)` 时走 **TLS**（对应 `grpc_tls`）。
+- `http_client` / `ca_cert_path` 仅适用于 HTTP 构造。
+- **拨号时机**：`build()` 立即建立连接，失败报 `Error::Config`（与 Go 的首次调用惰性拨号略有不同）。
+
+gRPC 业务错误映射为与 HTTP 相同的 `Error::Api` / `is_not_found` 等谓词。服务暂停为 `FailedPrecondition` → 503（`is_paused`）；传输层 `Unavailable` 等保留为 `Error::Grpc`，不会被 `is_paused` 命中。可用 `Error::is_grpc` 区分。
 
 ### 参数说明
 
@@ -177,7 +204,7 @@ let client = Client::builder("https://localhost:8443")?
 | `ca_cert_path(path)` | **自动管理 CA 证书**：检查本地路径是否存在，缺失时从服务端 `/v1/ca-cert` 下载并缓存；下载失败重试一次 | 生产环境推荐，自动化证书管理 |
 | `insecure_skip_verify(bool)` | 跳过 TLS 校验（仅测试）；仅对 `https://` 生效 | 开发/测试环境快速调试 |
 | `user_agent(string)` | 覆盖默认 User-Agent（默认 `rbac-sdk-rust/<version>`） | 需要自定义请求头标识 |
-| `timeout(Duration)` | 请求超时（默认 30s） | 根据业务需求调整超时时间 |
+| `timeout(Duration)` | 请求超时（默认 30s）。`Duration::ZERO` 表示不设超时 | 根据业务需求调整超时时间 |
 
 调用级选项（用于 `enforce` / `reachable`）：
 
@@ -390,6 +417,13 @@ fn main() -> Result<(), Error> {
 cd sdk-rust
 cargo test
 cargo clippy -- -D warnings
+```
+
+gRPC 桩已提交在 `src/pb/rbac.v1.rs`（对应 `proto/rbac/v1/rbac.proto`），工程无需 `protoc` 即可构建。在 monorepo 内同步服务端 proto 并重新生成：
+
+```bash
+cp ../server/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
+make proto   # 需要 protoc
 ```
 
 ## 许可

@@ -20,3 +20,6 @@ rustc-ice-*.txt
 # Local env
 .env
 .env.local
+
+# gen-proto build output (regenerate with `make proto`)
+tools/gen-proto/target/

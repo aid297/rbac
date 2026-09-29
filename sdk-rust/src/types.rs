@@ -23,7 +23,7 @@ impl ConditionKind {
         }
     }
 
-    fn parse(s: &str) -> Result<Self, String> {
+    pub(crate) fn parse(s: &str) -> Result<Self, String> {
         match s {
             "ALL" => Ok(ConditionKind::All),
             "TIME" => Ok(ConditionKind::Time),

@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use tonic::Status;
+
 /// Client and API errors.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -9,13 +11,23 @@ pub enum Error {
     #[error("rbac: {0}")]
     Config(String),
 
-    /// Non-2xx response from the rbac service.
+    /// Non-2xx response from the rbac service (HTTP or mapped gRPC).
     #[error("{0}")]
     Api(#[from] ApiError),
 
-    /// Transport / TLS / timeout / I/O failure (not an HTTP API status).
+    /// Transport / TLS / timeout / I/O failure (HTTP).
     #[error("rbac: transport: {0}")]
     Transport(#[from] reqwest::Error),
+
+    /// Raw gRPC transport status (Unavailable / Cancelled / DeadlineExceeded).
+    /// Application statuses are mapped to [`Error::Api`] instead. Boxed to
+    /// keep `Error` small (avoids `clippy::result_large_err`).
+    #[error("rbac: grpc: {0}")]
+    Grpc(#[from] Box<Status>),
+
+    /// gRPC client was closed via [`crate::Client::close`].
+    #[error("rbac: client is closed")]
+    Closed,
 
     /// Failed to encode or decode JSON.
     #[error("rbac: json: {0}")]
@@ -26,19 +38,19 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-/// Non-2xx HTTP response from the service.
+/// Non-2xx HTTP response from the service (or mapped gRPC application error).
 #[derive(Debug, Clone)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ApiError {
-    /// HTTP status code.
+    /// HTTP status code (gRPC application codes are mapped to HTTP).
     pub status_code: u16,
-    /// Request method.
+    /// Request method (`"RPC"` for gRPC).
     pub method: String,
-    /// Request path (without query).
+    /// Request path (gRPC method name when `method == "RPC"`).
     pub path: String,
-    /// Message from `{"error":...}` or `{"reason":...}` when present.
+    /// Message from `{"error":...}` / `{"reason":...}` or gRPC status detail.
     pub message: String,
-    /// Raw response body.
+    /// Raw response body (empty for mapped gRPC errors).
     pub body: Vec<u8>,
 }
 
@@ -88,6 +100,15 @@ impl Error {
         self.is_status(400)
     }
 
+    /// True when the error came from the gRPC path (mapped [`Error::Api`] with
+    /// `method == "RPC"`, or a raw transport [`Error::Grpc`]).
+    pub fn is_grpc(&self) -> bool {
+        match self {
+            Error::Api(e) if e.method == "RPC" => true,
+            Error::Grpc(_) => true,
+            _ => false,
+        }
+    }
     /// Classifies the error for `match`-style handling.
     pub fn kind(&self) -> ErrorKind {
         match self {
@@ -99,7 +120,8 @@ impl Error {
                 _ => ErrorKind::Api,
             },
             Error::Config(_) => ErrorKind::Config,
-            Error::Transport(_) => ErrorKind::Transport,
+            Error::Transport(_) | Error::Grpc(_) => ErrorKind::Transport,
+            Error::Closed => ErrorKind::Closed,
             Error::Json(_) => ErrorKind::Json,
             Error::Io(_) => ErrorKind::Io,
         }
@@ -121,8 +143,10 @@ pub enum ErrorKind {
     Paused,
     /// Other non-2xx API status.
     Api,
-    /// Network / TLS / timeout.
+    /// Network / TLS / timeout / gRPC transport.
     Transport,
+    /// Client closed.
+    Closed,
     /// JSON encode/decode.
     Json,
     /// Local I/O.

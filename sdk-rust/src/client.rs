@@ -1,4 +1,4 @@
-//! HTTP client for the rbac `/v1` API.
+//! HTTP / gRPC client for the rbac `/v1` API.
 
 use std::fs;
 use std::path::Path;
@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{api_error, Error};
+use crate::grpc::GrpcTransport;
 use crate::types::Binding;
 
 const DEFAULT_USER_AGENT: &str = concat!("rbac-sdk-rust/", env!("CARGO_PKG_VERSION"));
@@ -21,8 +22,8 @@ const MAX_RESPONSE_BYTES: u64 = 4 << 20;
 /// Per-call options for [`Client::enforce`] and [`Client::reachable`].
 #[derive(Debug, Clone, Default)]
 pub struct CallOpts {
-    scenarios: Vec<String>,
-    now: Option<DateTime<Utc>>,
+    pub(crate) scenarios: Vec<String>,
+    pub(crate) now: Option<DateTime<Utc>>,
 }
 
 impl CallOpts {
@@ -51,45 +52,78 @@ impl CallOpts {
 
 /// Concurrency-safe client for the rbac microservice `/v1` API.
 ///
-/// Construct with [`Client::new`] or [`Client::builder`].
+/// Construct with [`Client::new`] / [`Client::builder`] (HTTP) or
+/// [`Client::new_grpc`] / [`Client::grpc_builder`] (gRPC).
 #[derive(Clone)]
 pub struct Client {
-    inner: Arc<ClientInner>,
+    pub(crate) inner: Arc<ClientInner>,
 }
 
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Client")
-            .field("base_url", &self.inner.base_url)
-            .field("user_agent", &self.inner.user_agent)
-            .finish_non_exhaustive()
+        match &self.inner.transport {
+            Transport::Http { base_url, .. } => f
+                .debug_struct("Client")
+                .field("transport", &"http")
+                .field("base_url", base_url)
+                .finish_non_exhaustive(),
+            Transport::Grpc(_) => f
+                .debug_struct("Client")
+                .field("transport", &"grpc")
+                .finish_non_exhaustive(),
+        }
     }
 }
 
-struct ClientInner {
-    base_url: Url,
-    http: HttpClient,
-    user_agent: String,
+pub(crate) struct ClientInner {
+    pub(crate) transport: Transport,
+}
+
+pub(crate) enum Transport {
+    Http {
+        base_url: Url,
+        http: HttpClient,
+        user_agent: String,
+    },
+    Grpc(GrpcTransport),
 }
 
 impl Client {
-    /// Builds a client for `base_url` with default options (30s timeout).
-    ///
-    /// `base_url` should be an origin (e.g. `http://localhost:8080`); any
-    /// existing path is preserved and API paths are appended.
+    /// Builds an HTTP client for `base_url` with default options (30s timeout).
     pub fn new(base_url: &str) -> Result<Self, Error> {
         ClientBuilder::new(base_url)?.build()
     }
 
-    /// Starts a builder for custom TLS / timeout / user-agent settings.
+    /// Starts a builder for custom TLS / timeout / user-agent settings (HTTP).
     pub fn builder(base_url: &str) -> Result<ClientBuilder, Error> {
         ClientBuilder::new(base_url)
     }
 
-    /// Checks service liveness. Returns `Ok(())` on 200, or an API error
+    /// Builds a gRPC client for `target` (`host:port`). Plaintext by default.
+    pub fn new_grpc(target: &str) -> Result<Self, Error> {
+        crate::grpc::GrpcBuilder::new(target)?.build()
+    }
+
+    /// Starts a gRPC builder (`host:port`; TLS via CA / insecure options).
+    pub fn grpc_builder(target: &str) -> Result<crate::grpc::GrpcBuilder, Error> {
+        crate::grpc::GrpcBuilder::new(target)
+    }
+
+    /// Releases gRPC resources. No-op for HTTP. Safe to call more than once and
+    /// safe to race with in-flight RPCs; subsequent calls return [`Error::Closed`].
+    pub fn close(&self) {
+        if let Transport::Grpc(g) = &self.inner.transport {
+            g.close();
+        }
+    }
+
+    /// Checks service liveness. Returns `Ok(())` on success, or an API error
     /// ([`Error::is_paused`]) when the service is paused.
     pub fn health(&self) -> Result<(), Error> {
-        self.do_request("GET", "/healthz", None, None::<()>, false)
+        match &self.inner.transport {
+            Transport::Http { .. } => self.do_request("GET", "/healthz", None, None::<()>, false),
+            Transport::Grpc(g) => g.health(),
+        }
     }
 
     /// Reports whether `subject` can reach `target` under the given options.
@@ -99,6 +133,13 @@ impl Client {
         target: &str,
         opts: CallOpts,
     ) -> Result<bool, Error> {
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.enforce(subject, target, opts),
+            Transport::Http { .. } => self.enforce_http(subject, target, opts),
+        }
+    }
+
+    fn enforce_http(&self, subject: &str, target: &str, opts: CallOpts) -> Result<bool, Error> {
         #[derive(Serialize)]
         struct Body<'a> {
             subject: &'a str,
@@ -126,42 +167,65 @@ impl Client {
 
     /// Lists every node `subject` can reach, including `subject` itself.
     pub fn reachable(&self, subject: &str, opts: CallOpts) -> Result<Vec<String>, Error> {
-        let mut pairs: Vec<(String, String)> = vec![("subject".into(), subject.into())];
-        for s in &opts.scenarios {
-            pairs.push(("scenario".into(), s.clone()));
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.reachable(subject, opts),
+            Transport::Http { .. } => {
+                let mut pairs: Vec<(String, String)> =
+                    vec![("subject".into(), subject.into())];
+                for s in &opts.scenarios {
+                    pairs.push(("scenario".into(), s.clone()));
+                }
+                #[derive(Deserialize)]
+                struct Out {
+                    reachable: Vec<String>,
+                }
+                let out: Out =
+                    self.do_json("GET", "/v1/reachable", Some(&pairs), None::<()>)?;
+                Ok(out.reachable)
+            }
         }
-        #[derive(Deserialize)]
-        struct Out {
-            reachable: Vec<String>,
-        }
-        let out: Out = self.do_json("GET", "/v1/reachable", Some(&pairs), None::<()>)?;
-        Ok(out.reachable)
     }
 
     /// Returns all bindings.
     pub fn list_bindings(&self) -> Result<Vec<Binding>, Error> {
-        #[derive(Deserialize)]
-        struct Out {
-            bindings: Vec<Binding>,
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.list_bindings(),
+            Transport::Http { .. } => {
+                #[derive(Deserialize)]
+                struct Out {
+                    bindings: Vec<Binding>,
+                }
+                let out: Out = self.do_json("GET", "/v1/bindings", None, None::<()>)?;
+                Ok(out.bindings)
+            }
         }
-        let out: Out = self.do_json("GET", "/v1/bindings", None, None::<()>)?;
-        Ok(out.bindings)
     }
 
     /// Fetches a single binding, or [`Error::is_not_found`] if absent.
     pub fn get_binding(&self, src: &str, dst: &str, scenario: &str) -> Result<Binding, Error> {
-        let q = binding_query(src, dst, scenario);
-        self.do_json("GET", "/v1/bindings", Some(&q), None::<()>)
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.get_binding(src, dst, scenario),
+            Transport::Http { .. } => {
+                let q = binding_query(src, dst, scenario);
+                self.do_json("GET", "/v1/bindings", Some(&q), None::<()>)
+            }
+        }
     }
 
     /// Creates a binding. A duplicate returns [`Error::is_conflict`].
     pub fn add_binding(&self, b: &Binding) -> Result<Binding, Error> {
-        self.do_json("POST", "/v1/bindings", None, Some(b))
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.add_binding(b),
+            Transport::Http { .. } => self.do_json("POST", "/v1/bindings", None, Some(b)),
+        }
     }
 
     /// Replaces an existing binding. Missing → [`Error::is_not_found`] (not created).
     pub fn update_binding(&self, b: &Binding) -> Result<Binding, Error> {
-        self.do_json("PUT", "/v1/bindings", None, Some(b))
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.update_binding(b),
+            Transport::Http { .. } => self.do_json("PUT", "/v1/bindings", None, Some(b)),
+        }
     }
 
     /// Toggles a binding's enabled flag.
@@ -172,31 +236,54 @@ impl Client {
         scenario: &str,
         enabled: bool,
     ) -> Result<(), Error> {
-        #[derive(Serialize)]
-        struct Body<'a> {
-            src: &'a str,
-            dst: &'a str,
-            scenario: &'a str,
-            enabled: bool,
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.set_enabled(src, dst, scenario, enabled),
+            Transport::Http { .. } => {
+                #[derive(Serialize)]
+                struct Body<'a> {
+                    src: &'a str,
+                    dst: &'a str,
+                    scenario: &'a str,
+                    enabled: bool,
+                }
+                self.do_request(
+                    "PATCH",
+                    "/v1/bindings/enabled",
+                    None,
+                    Some(Body {
+                        src,
+                        dst,
+                        scenario,
+                        enabled,
+                    }),
+                    false,
+                )
+            }
         }
-        self.do_request(
-            "PATCH",
-            "/v1/bindings/enabled",
-            None,
-            Some(Body {
-                src,
-                dst,
-                scenario,
-                enabled,
-            }),
-            false,
-        )
     }
 
     /// Deletes a binding, or [`Error::is_not_found`] if absent.
     pub fn remove_binding(&self, src: &str, dst: &str, scenario: &str) -> Result<(), Error> {
-        let q = binding_query(src, dst, scenario);
-        self.do_request("DELETE", "/v1/bindings", Some(&q), None::<()>, false)
+        match &self.inner.transport {
+            Transport::Grpc(g) => g.remove_binding(src, dst, scenario),
+            Transport::Http { .. } => {
+                let q = binding_query(src, dst, scenario);
+                self.do_request("DELETE", "/v1/bindings", Some(&q), None::<()>, false)
+            }
+        }
+    }
+
+    fn http_parts(&self) -> Result<(&Url, &HttpClient, &str), Error> {
+        match &self.inner.transport {
+            Transport::Http {
+                base_url,
+                http,
+                user_agent,
+            } => Ok((base_url, http, user_agent)),
+            Transport::Grpc(_) => Err(Error::Config(
+                "internal: HTTP method called on gRPC client".into(),
+            )),
+        }
     }
 
     fn do_json<B, T>(
@@ -212,7 +299,6 @@ impl Client {
     {
         let data = self.do_bytes(method, path, query, body)?;
         if data.iter().all(|b| b.is_ascii_whitespace()) {
-            // Match Go SDK: empty body leaves zero values via empty object.
             return Ok(serde_json::from_value(serde_json::json!({}))?);
         }
         Ok(serde_json::from_slice(&data)?)
@@ -237,7 +323,8 @@ impl Client {
         query: Option<&[(String, String)]>,
         body: Option<B>,
     ) -> Result<Vec<u8>, Error> {
-        let mut url = join_path(&self.inner.base_url, path)?;
+        let (base_url, http, user_agent) = self.http_parts()?;
+        let mut url = join_path(base_url, path)?;
         if let Some(pairs) = query {
             let mut ser = url.query_pairs_mut();
             for (k, v) in pairs {
@@ -245,13 +332,11 @@ impl Client {
             }
         }
 
-        let mut builder = self
-            .inner
-            .http
+        let mut builder = http
             .request(method_from_str(method)?, url)
             .header("Accept", "application/json");
-        if !self.inner.user_agent.is_empty() {
-            builder = builder.header("User-Agent", &self.inner.user_agent);
+        if !user_agent.is_empty() {
+            builder = builder.header("User-Agent", user_agent);
         }
         if let Some(b) = body {
             let bytes = serde_json::to_vec(&b)?;
@@ -281,7 +366,6 @@ fn method_from_str(m: &str) -> Result<reqwest::Method, Error> {
 }
 
 fn join_path(base: &Url, path: &str) -> Result<Url, Error> {
-    // Mimic Go url.JoinPath: append path segments to the base URL.
     let mut u = base.clone();
     let mut segs: Vec<String> = u
         .path_segments()
@@ -320,7 +404,7 @@ fn binding_query(src: &str, dst: &str, scenario: &str) -> Vec<(String, String)> 
     q
 }
 
-/// Builder for [`Client`].
+/// Builder for an HTTP [`Client`].
 #[derive(Debug)]
 pub struct ClientBuilder {
     base_url: Url,
@@ -407,14 +491,14 @@ impl ClientBuilder {
     }
 
     /// Sets the overall request timeout (default 30s). Ignored when
-    /// [`Self::http_client`] is used.
+    /// [`Self::http_client`] is used. [`Duration::ZERO`] means no timeout.
     pub fn timeout(mut self, d: Duration) -> Self {
         self.timeout = d;
         self.timeout_set = true;
         self
     }
 
-    /// Finalizes the client.
+    /// Finalizes the HTTP client.
     pub fn build(self) -> Result<Client, Error> {
         let scheme = self.base_url.scheme();
         if scheme == "http"
@@ -427,11 +511,10 @@ impl ClientBuilder {
             ));
         }
 
-        // Handle CA cert auto-fetch if path is configured
         let mut ca_pems = self.ca_pems;
         if let Some(ref path) = self.ca_cert_path {
             if self.custom_http.is_none() && scheme == "https" {
-                let cache = crate::cacache::CACache::new(&self.base_url.to_string(), path);
+                let cache = crate::cacache::CACache::new(self.base_url.as_ref(), path);
                 let pem = cache.load_or_fetch()?;
                 ca_pems.push(pem);
             }
@@ -440,13 +523,18 @@ impl ClientBuilder {
         let http = if let Some(hc) = self.custom_http {
             hc
         } else {
-            let mut b = HttpClientBuilder::new()
-                .timeout(if self.timeout_set {
-                    self.timeout
-                } else {
-                    DEFAULT_TIMEOUT
-                })
-                .user_agent(""); // we set UA per-request
+            let timeout = if self.timeout_set {
+                self.timeout
+            } else {
+                DEFAULT_TIMEOUT
+            };
+            let mut b = HttpClientBuilder::new().user_agent("");
+            // reqwest: None disables timeout; ZERO is rejected — map to None.
+            b = if timeout.is_zero() {
+                b.timeout(None)
+            } else {
+                b.timeout(timeout)
+            };
             if scheme == "https" && (!ca_pems.is_empty() || self.insecure) {
                 if self.insecure {
                     b = b.danger_accept_invalid_certs(true);
@@ -467,16 +555,16 @@ impl ClientBuilder {
 
         Ok(Client {
             inner: Arc::new(ClientInner {
-                base_url: self.base_url,
-                http,
-                user_agent,
+                transport: Transport::Http {
+                    base_url: self.base_url,
+                    http,
+                    user_agent,
+                },
             }),
         })
     }
 }
 
-/// Parse PEM CA bytes, rejecting inputs that contain no `CERTIFICATE` block
-/// (mirrors Go `x509.CertPool.AppendCertsFromPEM` failure semantics).
 fn parse_ca_pem(pem: &[u8]) -> Result<Certificate, Error> {
     const BEGIN: &[u8] = b"-----BEGIN CERTIFICATE-----";
     if !pem.windows(BEGIN.len()).any(|w| w == BEGIN) {
