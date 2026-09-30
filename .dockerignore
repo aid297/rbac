@@ -1,5 +1,5 @@
-# Build context is the repo root (docker build -f server/Dockerfile .).
-# Everything under server/ is needed; keep the SDKs, git data and build
+# Build context is the repo root (docker build -f kernal/Dockerfile .).
+# Everything under kernal/ is needed; keep the SDKs, git data and build
 # artifacts out of the image.
 .git
 .github

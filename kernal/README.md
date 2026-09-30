@@ -55,7 +55,7 @@ go build -o rbac ./cmd/rbac
 RBAC_CONFIG=/path/to/config.yaml ./rbac
 ```
 
-默认所有服务（HTTP / HTTPS / admin）都是关闭的，进程仅完成存储初始化后等待信号。要对外提供服务，请在 `config.yaml` 中打开对应开关。例如开启 HTTP 与管理页：
+默认所有服务（HTTP / HTTPS / gRPC / gRPC+TLS / admin）都是关闭的，进程仅完成存储初始化后等待信号。要对外提供服务，请在 `config.yaml` 中打开对应开关。例如开启 HTTP 与管理页：
 
 ```yaml
 server:

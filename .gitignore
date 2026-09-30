@@ -13,3 +13,6 @@
 .vscode/
 *.swp
 *~
+
+# Qoder workspace analysis artifacts (local only, not part of the deliverable)
+.qoder/
