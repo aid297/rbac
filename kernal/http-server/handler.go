@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/aid297/rbac/kernal/rbac/persist"
 	"github.com/aid297/rbac/kernal/rbac/policy"
 )
@@ -19,56 +21,72 @@ type api struct {
 	caCertPEM []byte
 }
 
-func NewHandler(store *persist.Store, caCertPEM []byte) http.Handler {
-	a := &api{store: store, caCertPEM: caCertPEM}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", a.healthz)
-	mux.HandleFunc("GET /v1/ca-cert", a.getCACert)
-	mux.HandleFunc("POST /v1/enforce", a.enforce)
-	mux.HandleFunc("GET /v1/reachable", a.reachable)
-	mux.HandleFunc("GET /v1/bindings", a.getBindings)
-	mux.HandleFunc("POST /v1/bindings", a.addBinding)
-	mux.HandleFunc("PUT /v1/bindings", a.updateBinding)
-	mux.HandleFunc("PATCH /v1/bindings/enabled", a.setEnabled)
-	mux.HandleFunc("DELETE /v1/bindings", a.removeBinding)
-	return pauseMux(mux)
+// MountAPI registers the public /v1 REST API (plus /healthz, /v1/ca-cert) on an existing Gin router.
+// Use this to embed RBAC routes in a larger Gin application.
+func MountAPI(r gin.IRouter, store *persist.Store, caCertPEM []byte) {
+	g := r.Group("")
+	g.Use(pauseMiddleware())
+	(&api{store: store, caCertPEM: caCertPEM}).registerRoutes(g)
 }
 
-func pauseMux(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paused, why := persist.Paused()
-		if r.URL.Path == "/healthz" {
-			next.ServeHTTP(w, r)
+// NewEngine builds a standalone Gin engine with the public API (Recovery + pause middleware).
+func NewEngine(store *persist.Store, caCertPEM []byte) *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
+	e := gin.New()
+	e.Use(gin.Recovery())
+	MountAPI(e, store, caCertPEM)
+	return e
+}
+
+// NewHandler returns the API as an http.Handler (same routes as NewEngine).
+func NewHandler(store *persist.Store, caCertPEM []byte) http.Handler {
+	return NewEngine(store, caCertPEM)
+}
+
+func (a *api) registerRoutes(e gin.IRoutes) {
+	e.GET("/healthz", a.healthz)
+	e.GET("/v1/ca-cert", a.getCACert)
+	e.POST("/v1/enforce", a.enforce)
+	e.GET("/v1/reachable", a.reachable)
+	e.GET("/v1/bindings", a.getBindings)
+	e.POST("/v1/bindings", a.addBinding)
+	e.PUT("/v1/bindings", a.updateBinding)
+	e.PATCH("/v1/bindings/enabled", a.setEnabled)
+	e.DELETE("/v1/bindings", a.removeBinding)
+}
+
+func pauseMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.URL.Path == "/healthz" {
+			c.Next()
 			return
 		}
-		if paused {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+		if paused, why := persist.Paused(); paused {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
 				"error":  "service paused",
 				"reason": why,
 			})
 			return
 		}
-		next.ServeHTTP(w, r)
-	})
+		c.Next()
+	}
 }
 
-func (a *api) healthz(w http.ResponseWriter, _ *http.Request) {
+func (a *api) healthz(c *gin.Context) {
 	paused, why := persist.Paused()
 	if paused {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "paused", "reason": why})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "paused", "reason": why})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (a *api) getCACert(w http.ResponseWriter, _ *http.Request) {
+func (a *api) getCACert(c *gin.Context) {
 	if len(a.caCertPEM) == 0 {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "CA certificate not available"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "CA certificate not available"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(a.caCertPEM)
+	c.Data(http.StatusOK, "application/x-pem-file", a.caCertPEM)
 }
 
 type enforceReq struct {
@@ -78,81 +96,80 @@ type enforceReq struct {
 	Now       *time.Time `json:"now"`
 }
 
-func (a *api) enforce(w http.ResponseWriter, r *http.Request) {
+func (a *api) enforce(c *gin.Context) {
 	var req enforceReq
-	if err := decodeJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if err := decodeJSON(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Subject == "" || req.Target == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "subject and target required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "subject and target required"})
 		return
 	}
 	ok := a.store.Enforce(req.Subject, req.Target, evalCtx(req.Scenarios, req.Now))
-	writeJSON(w, http.StatusOK, map[string]any{"allow": ok})
+	c.JSON(http.StatusOK, gin.H{"allow": ok})
 }
 
-func (a *api) reachable(w http.ResponseWriter, r *http.Request) {
-	subject := strings.TrimSpace(r.URL.Query().Get("subject"))
+func (a *api) reachable(c *gin.Context) {
+	subject := strings.TrimSpace(c.Query("subject"))
 	if subject == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "subject required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "subject required"})
 		return
 	}
-	scenarios := r.URL.Query()["scenario"]
-	writeJSON(w, http.StatusOK, map[string]any{
+	scenarios := c.QueryArray("scenario")
+	c.JSON(http.StatusOK, gin.H{
 		"subject":   subject,
 		"reachable": a.store.Reachable(subject, evalCtx(scenarios, nil)),
 	})
 }
 
-func (a *api) getBindings(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	src, dst := q.Get("src"), q.Get("dst")
+func (a *api) getBindings(c *gin.Context) {
+	src, dst := c.Query("src"), c.Query("dst")
 	if src == "" && dst == "" {
 		list := a.store.ListBindings()
 		out := make([]bindingDTO, 0, len(list))
 		for _, b := range list {
 			out = append(out, bindingToDTO(b))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"bindings": out})
+		c.JSON(http.StatusOK, gin.H{"bindings": out})
 		return
 	}
 	if src == "" || dst == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "src and dst required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "src and dst required"})
 		return
 	}
-	b, ok := a.store.GetBinding(src, dst, q.Get("scenario"))
+	b, ok := a.store.GetBinding(src, dst, c.Query("scenario"))
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": policy.ErrBindingNotFound.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": policy.ErrBindingNotFound.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, bindingToDTO(b))
+	c.JSON(http.StatusOK, bindingToDTO(b))
 }
 
-func (a *api) addBinding(w http.ResponseWriter, r *http.Request) {
-	b, err := readBinding(r)
+func (a *api) addBinding(c *gin.Context) {
+	b, err := readBinding(c)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err := a.store.AddBinding(b); err != nil {
-		writePolicyErr(w, err)
+		writePolicyErr(c, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, bindingToDTO(b))
+	c.JSON(http.StatusCreated, bindingToDTO(b))
 }
 
-func (a *api) updateBinding(w http.ResponseWriter, r *http.Request) {
-	b, err := readBinding(r)
+func (a *api) updateBinding(c *gin.Context) {
+	b, err := readBinding(c)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err := a.store.UpdateBinding(b); err != nil {
-		writePolicyErr(w, err)
+		writePolicyErr(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, bindingToDTO(b))
+	c.JSON(http.StatusOK, bindingToDTO(b))
 }
 
 type enabledReq struct {
@@ -162,35 +179,34 @@ type enabledReq struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-func (a *api) setEnabled(w http.ResponseWriter, r *http.Request) {
+func (a *api) setEnabled(c *gin.Context) {
 	var req enabledReq
-	if err := decodeJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if err := decodeJSON(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Src == "" || req.Dst == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "src and dst required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "src and dst required"})
 		return
 	}
 	if err := a.store.SetEnabled(req.Src, req.Dst, req.Scenario, req.Enabled); err != nil {
-		writePolicyErr(w, err)
+		writePolicyErr(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (a *api) removeBinding(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	src, dst := q.Get("src"), q.Get("dst")
+func (a *api) removeBinding(c *gin.Context) {
+	src, dst := c.Query("src"), c.Query("dst")
 	if src == "" || dst == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "src and dst required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "src and dst required"})
 		return
 	}
-	if err := a.store.RemoveBinding(src, dst, q.Get("scenario")); err != nil {
-		writePolicyErr(w, err)
+	if err := a.store.RemoveBinding(src, dst, c.Query("scenario")); err != nil {
+		writePolicyErr(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
 func evalCtx(scenarios []string, now *time.Time) *policy.EvalContext {
@@ -201,28 +217,22 @@ func evalCtx(scenarios []string, now *time.Time) *policy.EvalContext {
 	return ctx
 }
 
-func writePolicyErr(w http.ResponseWriter, err error) {
+func writePolicyErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, policy.ErrDuplicateBinding):
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, policy.ErrBindingNotFound):
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, policy.ErrInvalidResource), errors.Is(err, policy.ErrInvalidTimeRange), errors.Is(err, policy.ErrInvalidConditionMix), errors.Is(err, policy.ErrParseLine):
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
 }
 
-func decodeJSON(r *http.Request, dst any) error {
-	defer r.Body.Close()
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+func decodeJSON(c *gin.Context, dst any) error {
+	defer c.Request.Body.Close()
+	dec := json.NewDecoder(io.LimitReader(c.Request.Body, maxBody))
 	dec.DisallowUnknownFields()
 	return dec.Decode(dst)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }

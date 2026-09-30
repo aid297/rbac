@@ -2,9 +2,10 @@ package httpserver
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/aid297/rbac/kernal/rbac/policy"
 )
@@ -83,10 +84,10 @@ func (d bindingDTO) toBinding() (policy.Binding, error) {
 	return b, nil
 }
 
-func readBinding(r *http.Request) (policy.Binding, error) {
+func readBinding(c *gin.Context) (policy.Binding, error) {
 	var dto bindingDTO
 	dto.Enabled = true
-	if err := decodeJSON(r, &dto); err != nil {
+	if err := decodeJSON(c, &dto); err != nil {
 		if err.Error() == "EOF" {
 			return policy.Binding{}, fmt.Errorf("empty body")
 		}

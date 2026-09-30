@@ -29,7 +29,7 @@ Go module `github.com/aid297/rbac/kernal`：**RBAC 授权内核**（策略引擎
 | [`rbac/persist`](rbac/persist/) | 策略存储：文件、加密、Redis 副本、对账与暂停 |
 | [`rbac/cache`](rbac/cache/) | Redis 客户端（供 persist 选用） |
 | [`rbac/crypto`](rbac/crypto/) | 策略文件加密算法（AES-GCM、SM4） |
-| [`http-server`](http-server/) | 对外 HTTP / HTTPS `/v1` REST（package `httpserver`） |
+| [`http-server`](http-server/) | 对外 HTTP / HTTPS `/v1` REST（package `httpserver`，基于 [Gin](https://github.com/gin-gonic/gin)；可 `MountAPI` 嵌入已有 Gin 服务） |
 | [`grpc-server`](grpc-server/) | 对外 gRPC / gRPC+TLS（package `grpcserver`） |
 | [`adminui`](adminui/) | 管理预览页（独立端口；可与 HTTP API 分别开关） |
 | [`api/`](api/) | 公开契约：OpenAPI、`proto`、Go 生成代码 |

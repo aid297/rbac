@@ -25,6 +25,19 @@ go get github.com/aid297/rbac/kernal
 
 HTTP/gRPC 只是把同一套 `Store` API 暴露成 REST/proto；语义以本库为准。
 
+若要在**同一进程**用 **Gin** 暴露与微服务相同的 `/v1` 路由（而不是自己写 handler）：
+
+```go
+import (
+    "github.com/gin-gonic/gin"
+    "github.com/aid297/rbac/kernal/http-server"
+)
+
+r := gin.New()
+httpserver.MountAPI(r, store, caCertPEM) // caCertPEM 可为 nil
+// 或独立引擎： httpserver.NewEngine(store, caCertPEM)
+```
+
 ---
 
 ## 1. 先建立模型（3 分钟）
