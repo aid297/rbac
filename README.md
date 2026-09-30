@@ -15,7 +15,7 @@
 
 设计文档见 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
 
-未使用官方 SDK 时，见 [`server/api/README.md`](server/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。
+未使用官方 SDK 时，见 [`server/api/README.md`](server/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。**改 API 或给 AI/贡献者看整体约定**：[`docs/INTEGRATION.md`](docs/INTEGRATION.md)。
 
 ## 快速开始
 

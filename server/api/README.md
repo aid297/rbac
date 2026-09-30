@@ -89,6 +89,8 @@ Maintained in this monorepo (HTTP + gRPC, shared semantics):
 
 For other languages, prefer **OpenAPI → REST** and/or **proto → gRPC** from this directory. If generated behavior diverges (timeouts, pause detection, timestamp truncation to seconds), align with the official SDKs or the server implementation in `server/httpsvc` and `server/grpcsvc`.
 
+Monorepo change checklist (openapi ↔ handlers ↔ proto ↔ SDKs): [`docs/INTEGRATION.md`](../../docs/INTEGRATION.md).
+
 ## Versioning
 
 - **OpenAPI** `info.version` tracks the **document** revision (bump when the HTTP contract changes).
