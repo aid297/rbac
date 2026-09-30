@@ -140,7 +140,23 @@ cd sdk-ts && npm test
 npx --yes @redocly/cli lint kernal/api/openapi.yaml
 ```
 
-## 8. 刻意不在范围内的文档
+## 8. 运维假设与非目标
+
+集成方、代码生成器与 AI 助手应默认以下边界（细节见 [`kernal/README.md`](../kernal/README.md)「生产部署与限制」）：
+
+| 假设 | 说明 |
+| --- | --- |
+| **公开面无鉴权** | HTTP `/v1/*` 与 gRPC `rbac.v1.RbacService` **无内置认证**；OpenAPI 中 `security: []` 表示刻意如此。对外必须 **网络隔离、私有链路或网关鉴权**。Admin `/api/*` 为 Basic Auth，**不在** openapi/proto 中。 |
+| **单机写、文件为准** | 策略文件 `policy.rbac` 为**唯一事实来源**；Redis（若启用）为异步副本，**非**多主集群。无内置选主、分片或跨节点一致性协议。 |
+| **内存规模与 API 形状** | 授权图在进程内全量驻留；`Reachable` 一次返回全部可达节点（**无分页**）。超大规模需产品层限流或避免全量 Reachable。 |
+| **引擎语义** | `Enforce(subject, subject)` **恒 true**；与 HTTP/gRPC/SDK 一致，非 bug。 |
+| **可观测性** | 日志（zap）为主；**无**官方 Prometheus 指标或 trace 管线。 |
+| **文档范围** | 传输层（HTTP/gRPC handler）无单独 superpowers 设计 spec；行为以 **openapi + proto + 实现** 为准。`docs/superpowers/specs/` 仅 2 份历史快照（policy 引擎、sdk-go 立项），文首有勘误。 |
+| **Module 命名** | Go module 为 **`github.com/aid297/rbac/kernal`**（`kernal` 为仓库统一拼写）。 |
+
+**非目标（当前版本不做）**：公开 API 内置 OAuth/mTLS 客户端认证、多副本策略合并、Reachable 分页、内置 metrics 导出、WebSocket 传输。
+
+## 9. 刻意不在范围内的文档
 
 - [`docs/superpowers/specs/`](superpowers/specs/)：立项设计快照；各文件文首有 **「文档勘误」**，正文过时处以勘误与本文为准。
 - Admin UI、Docker 细节、发布到 npm/NuGet/crates 的步骤：见各子目录 README 与发布脚本，不在本文展开。

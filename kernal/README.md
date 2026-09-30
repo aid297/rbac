@@ -240,10 +240,27 @@ b, role:editor, doc:42, , 1, TIME:2026-06-01T00:00:00Z~2026-07-01T00:00:00Z
 go test -race ./...
 
 # 查看 policy 内核覆盖率
-go test ./policy/... -cover
+go test ./rbac/policy/... -cover
 ```
 
 `policy` 包采用标准库 `testing` 的表驱动测试，无第三方断言依赖。
+
+## 生产部署与限制
+
+在把 `cmd/rbac` 或公开 API 接到生产环境前，请默认按**单机授权内核 + 需外层补安全与 HA**来规划，而不是内置多租户网关。
+
+| 主题 | 现状 | 建议 |
+| --- | --- | --- |
+| **公开 API 鉴权** | `/v1` 与 gRPC **`RbacService` 均无认证**（Admin 为 Basic Auth，且不在 openapi/proto 中） | 仅内网或经 **API 网关 / mTLS / 自研鉴权** 暴露；契约见 [`api/README.md`](api/README.md) |
+| **部署拓扑** | **单进程**；`policy.rbac` 为**唯一事实来源**，Redis 仅为 sealed blob **副本**（可选），无内置选主或集群 | 高可用靠外部编排（单写者、共享存储、主备切换等）；避免多实例无协调共写同一文件 |
+| **规模** | 查询全在**内存**（COW 快照，读无锁）；v1 设计假设**万级边**、写低频 | 超大图受单机内存限制；`Reachable` **无分页**，返回完整集合，调用方需过滤或限流 |
+| **语义** | **`Enforce(x, x)` 恒为 `true`**（自环视为允许） | 若产品要禁止「访问自身」，在业务或网关层额外判断 |
+| **可观测性** | 结构化日志（zap）；**无内置 metrics / 分布式追踪** | 生产可接 Prometheus、OpenTelemetry 等（需自行埋点或 sidecar） |
+| **构建产物** | 模块内库路径为 **`kernal/rbac/`** | 构建二进制请用 **`-o rbac-server`**（或其它非 `rbac` 名），勿 `go build -o rbac` 与库目录冲突 |
+
+**代码侧相对成熟的部分**：分层清晰（[`rbac/`](rbac/README.md) 内核 vs `http-server` / `grpc-server`）、写路径原子落盘、可选加密与 reconcile 失败时**暂停 API**、公开契约（openapi + proto）与官方 SDK 对齐。主要风险在**部署形态与威胁模型**，而非单测覆盖的每一层（例如 `cmd/rbac` 入口、`logging` 多无单测，属常见情况；传输层无单独 superpowers spec，以契约与 [`docs/INTEGRATION.md`](../docs/INTEGRATION.md) 为准）。
+
+进程内集成（不走网络）见 [`rbac/README.md`](rbac/README.md)。Module 路径刻意写作 **`kernal`**（全仓库一致，非 `kernel` 笔误待改）。
 
 ## 许可证
 

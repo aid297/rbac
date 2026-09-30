@@ -15,7 +15,7 @@
 
 设计文档见 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
 
-未使用官方 SDK 时，见 [`kernal/api/README.md`](kernal/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。**改 API 或给 AI/贡献者看整体约定**：[`docs/INTEGRATION.md`](docs/INTEGRATION.md)。
+未使用官方 SDK 时，见 [`kernal/api/README.md`](kernal/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。**改 API 或给 AI/贡献者看整体约定**：[`docs/INTEGRATION.md`](docs/INTEGRATION.md)（含 §8 运维假设与非目标）。生产部署限制见 [`kernal/README.md`](kernal/README.md)「生产部署与限制」。
 
 ## 快速开始
 
