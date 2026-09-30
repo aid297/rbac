@@ -17,6 +17,8 @@
 
 未使用官方 SDK 时，见 [`kernal/api/README.md`](kernal/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。**改 API 或给 AI/贡献者看整体约定**：[`docs/INTEGRATION.md`](docs/INTEGRATION.md)（含 §8 运维假设与非目标）。生产部署限制见 [`kernal/README.md`](kernal/README.md)「生产部署与限制」。
 
+本机联调目录 **`demo/`、`kernal/demo/` 不纳入 Git**；说明见 [`docs/local-demo.md`](docs/local-demo.md)。
+
 ## 快速开始
 
 启动服务端（详见 [`kernal/README.md`](kernal/README.md)）：

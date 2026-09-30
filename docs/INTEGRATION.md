@@ -160,6 +160,7 @@ npx --yes @redocly/cli lint kernal/api/openapi.yaml
 
 - [`docs/superpowers/specs/`](superpowers/specs/)：立项设计快照；各文件文首有 **「文档勘误」**，正文过时处以勘误与本文为准。
 - Admin UI、Docker 细节、发布到 npm/NuGet/crates 的步骤：见各子目录 README 与发布脚本，不在本文展开。
+- **本地 demo 目录**（`demo/`、`kernal/demo/`）：已 [`.gitignore`](../.gitignore) 排除追踪，用途与启动方式见 [`local-demo.md`](local-demo.md)；SDK 手工用例见 [`local-demo-spec.md`](local-demo-spec.md)。
 
 ---
 

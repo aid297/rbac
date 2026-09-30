@@ -1,5 +1,9 @@
 # Monorepo-wide ignores. Language/runtime artifacts live in each subproject's .gitignore.
 
+# Local demo / manual integration (see docs/local-demo.md)
+/demo/
+/kernal/demo/
+
 # Runtime policy and CA material when the server is started from the repo root
 /stats/
 /secret/
