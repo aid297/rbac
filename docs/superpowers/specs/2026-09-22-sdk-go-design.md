@@ -1,8 +1,31 @@
 # sdk-go 设计：rbac 微服务的 Go 客户端 SDK
 
 - 日期：2026-09-22
-- 状态：已批准，待实现
-- 范围：① 将仓库重构为 monorepo（服务端收入 `server/`）；② 新建 `sdk-go` 项目，作为对接 rbac 微服务的官方 Go 客户端 SDK。第一版仅覆盖服务端已支持的 HTTP / HTTPS 两种协议。
+- 状态：**历史快照**（monorepo 与 sdk-go 已实现；**勿将正文当作当前仓库现状**）
+- 范围（撰写时）：① 将仓库重构为 monorepo（服务端收入 `server/`）；② 新建 `sdk-go` 项目。正文假设 v1 **仅 HTTP / HTTPS**。
+
+## 文档勘误（阅读必读）
+
+本文保留立项时的设计过程。集成与改 API 请以**活文档**为准：
+
+| 主题 | 当前依据 |
+| --- | --- |
+| 公开 HTTP/gRPC 契约 | [`server/api/openapi.yaml`](../../../server/api/openapi.yaml)、[`server/api/proto/rbac/v1/rbac.proto`](../../../server/api/proto/rbac/v1/rbac.proto) |
+| monorepo 变更检查表 | [`docs/INTEGRATION.md`](../../INTEGRATION.md) |
+| sdk-go 用法与 gRPC | [`sdk-go/README.md`](../../../sdk-go/README.md) |
+
+与**当前代码不一致**的常见表述（正文若出现，以代码与上表为准）：
+
+- 「待实现」→ sdk-go 及 `server/` monorepo **已完成**。
+- 「非目标：gRPC / 服务端尚不支持 gRPC」→ 服务端与 **sdk-go / sdk-ts / sdk-rust / sdk-csharp** 均已支持 gRPC/gRPC+TLS。
+- 「零第三方依赖」→ sdk-go **依赖** `google.golang.org/grpc` 与 protobuf（HTTP 路径仍主要用标准库）。
+- 「无 OpenAPI / 不从 OpenAPI 生成」→ 已提供 [`server/api/openapi.yaml`](../../../server/api/openapi.yaml)；官方 SDK 仍为手写，其它语言可用生成器。
+- monorepo 仅 `sdk-go` → 另有 **sdk-ts、sdk-rust、sdk-csharp**。
+- §9 未决「gRPC SDK 扩展」→ **已实现**。
+
+仍大致有效的部分：HTTP 客户端形态（functional options、`*APIError`、`/v1` 端点范围、不包含 admin API）、SDK 不 import 服务端 module。
+
+---
 
 ## 1. 背景与目标
 

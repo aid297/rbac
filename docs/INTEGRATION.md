@@ -140,7 +140,7 @@ npx --yes @redocly/cli lint server/api/openapi.yaml
 
 ## 8. 刻意不在范围内的文档
 
-- [`docs/superpowers/specs/2026-09-22-sdk-go-design.md`](superpowers/specs/2026-09-22-sdk-go-design.md)：历史设计；其中「无 gRPC / 无 OpenAPI」等描述**已过时**，勿作为现状依据。
+- [`docs/superpowers/specs/`](superpowers/specs/)：立项设计快照；各文件文首有 **「文档勘误」**，正文过时处以勘误与本文为准。
 - Admin UI、Docker 细节、发布到 npm/NuGet/crates 的步骤：见各子目录 README 与发布脚本，不在本文展开。
 
 ---
