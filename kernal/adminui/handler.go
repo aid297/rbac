@@ -2,12 +2,10 @@ package adminui
 
 import (
 	"crypto/subtle"
-	"encoding/json"
-	"io"
+	"io/fs"
 	"net/http"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/aid297/rbac/kernal/rbac/persist"
 	"github.com/aid297/rbac/kernal/rbac/policy"
@@ -51,16 +49,29 @@ func (c *Creds) Match(user, pass string) bool {
 }
 
 type api struct {
-	store *persist.Store
-	creds *Creds
-	page  []byte
+	store  *persist.Store
+	creds  *Creds
+	static fs.FS
 }
 
-func NewHandler(store *persist.Store, creds *Creds, page []byte) http.Handler {
-	a := &api{store: store, creds: creds, page: page}
+// NewHandler serves JSON under /api/* and the embedded SPA at / and /assets/*.
+// staticRoot must contain a "static" directory (Vite outDir), unless testing with a custom layout.
+func NewHandler(store *persist.Store, creds *Creds, staticRoot fs.FS) http.Handler {
+	sub, err := fs.Sub(staticRoot, "static")
+	if err != nil {
+		sub = staticRoot
+	}
+	a := &api{store: store, creds: creds, static: sub}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", a.index)
-	mux.HandleFunc("GET /api/bindings", a.bindings)
+	mux.HandleFunc("GET /", a.serveIndex)
+	if assets, err := fs.Sub(a.static, "assets"); err == nil {
+		mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
+	}
+	mux.HandleFunc("GET /api/bindings", a.listBindings)
+	mux.HandleFunc("POST /api/bindings", a.addBinding)
+	mux.HandleFunc("PUT /api/bindings", a.updateBinding)
+	mux.HandleFunc("DELETE /api/bindings", a.removeBinding)
+	mux.HandleFunc("PATCH /api/bindings/enabled", a.setEnabled)
 	mux.HandleFunc("GET /api/policy", a.policy)
 	mux.HandleFunc("POST /api/enforce", a.enforce)
 	mux.HandleFunc("GET /api/reachable", a.reachable)
@@ -72,29 +83,100 @@ func (a *api) basicAuth(next http.Handler) http.Handler {
 		u, p, ok := r.BasicAuth()
 		if !ok || a.creds == nil || !a.creds.Match(u, p) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="rbac-admin"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			http.Error(w, "未授权", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (a *api) index(w http.ResponseWriter, r *http.Request) {
+func (a *api) serveIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+	b, err := fs.ReadFile(a.static, "index.html")
+	if err != nil {
+		http.Error(w, "管理界面未构建：请在 adminui/web 执行 npm run build", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(a.page)
+	_, _ = w.Write(b)
 }
 
-func (a *api) bindings(w http.ResponseWriter, _ *http.Request) {
+func (a *api) listBindings(w http.ResponseWriter, r *http.Request) {
+	src, dst := r.URL.Query().Get("src"), r.URL.Query().Get("dst")
+	if src != "" && dst != "" {
+		b, ok := a.store.GetBinding(src, dst, r.URL.Query().Get("scenario"))
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": policy.ErrBindingNotFound.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, bindingToDTO(b))
+		return
+	}
 	list := a.store.ListBindings()
 	out := make([]bindingDTO, 0, len(list))
 	for _, b := range list {
 		out = append(out, bindingToDTO(b))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"bindings": out})
+}
+
+func (a *api) addBinding(w http.ResponseWriter, r *http.Request) {
+	b, err := readBindingJSON(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := a.store.AddBinding(b); err != nil {
+		writePolicyErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, bindingToDTO(b))
+}
+
+func (a *api) updateBinding(w http.ResponseWriter, r *http.Request) {
+	b, err := readBindingJSON(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := a.store.UpdateBinding(b); err != nil {
+		writePolicyErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, bindingToDTO(b))
+}
+
+func (a *api) setEnabled(w http.ResponseWriter, r *http.Request) {
+	var req enabledReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Src == "" || req.Dst == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "src and dst required"})
+		return
+	}
+	if err := a.store.SetEnabled(req.Src, req.Dst, req.Scenario, req.Enabled); err != nil {
+		writePolicyErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *api) removeBinding(w http.ResponseWriter, r *http.Request) {
+	src, dst := r.URL.Query().Get("src"), r.URL.Query().Get("dst")
+	if src == "" || dst == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "src and dst required"})
+		return
+	}
+	if err := a.store.RemoveBinding(src, dst, r.URL.Query().Get("scenario")); err != nil {
+		writePolicyErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *api) policy(w http.ResponseWriter, _ *http.Request) {
@@ -133,51 +215,3 @@ func (a *api) reachable(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type bindingDTO struct {
-	Src        string         `json:"src"`
-	Dst        string         `json:"dst"`
-	Scenario   string         `json:"scenario"`
-	Enabled    bool           `json:"enabled"`
-	Conditions []conditionDTO `json:"conditions"`
-}
-
-type conditionDTO struct {
-	Kind  string `json:"kind"`
-	Start string `json:"start,omitempty"`
-	End   string `json:"end,omitempty"`
-}
-
-func bindingToDTO(b policy.Binding) bindingDTO {
-	dto := bindingDTO{Src: b.Src, Dst: b.Dst, Scenario: b.Scenario, Enabled: b.Enabled}
-	if len(b.Conditions) == 0 {
-		dto.Conditions = []conditionDTO{{Kind: "ALL"}}
-		return dto
-	}
-	for _, c := range b.Conditions {
-		switch t := c.(type) {
-		case policy.AllCondition:
-			dto.Conditions = append(dto.Conditions, conditionDTO{Kind: "ALL"})
-		case policy.TimeCondition:
-			cd := conditionDTO{Kind: "TIME"}
-			if t.Start != nil {
-				cd.Start = t.Start.UTC().Format(time.RFC3339)
-			}
-			if t.End != nil {
-				cd.End = t.End.UTC().Format(time.RFC3339)
-			}
-			dto.Conditions = append(dto.Conditions, cd)
-		}
-	}
-	return dto
-}
-
-func decodeJSON(r *http.Request, dst any) error {
-	defer r.Body.Close()
-	return json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(dst)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}

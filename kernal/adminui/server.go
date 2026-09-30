@@ -2,7 +2,6 @@ package adminui
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,9 +9,6 @@ import (
 
 	"github.com/aid297/rbac/kernal/rbac/persist"
 )
-
-//go:embed page.html
-var pageHTML []byte
 
 func Serve(ctx context.Context, addr string, store *persist.Store, creds *Creds) error {
 	if store == nil || creds == nil {
@@ -23,7 +19,7 @@ func Serve(ctx context.Context, addr string, store *persist.Store, creds *Creds)
 	}
 	s := &http.Server{
 		Addr:              addr,
-		Handler:           NewHandler(store, creds, pageHTML),
+		Handler:           NewHandler(store, creds, embeddedStatic),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

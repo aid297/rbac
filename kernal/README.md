@@ -31,7 +31,7 @@ Go module `github.com/aid297/rbac/kernal`：**RBAC 授权内核**（策略引擎
 | [`rbac/crypto`](rbac/crypto/) | 策略文件加密算法（AES-GCM、SM4） |
 | [`http-server`](http-server/) | 对外 HTTP / HTTPS `/v1` REST（package `httpserver`，基于 [Gin](https://github.com/gin-gonic/gin)；可 `MountAPI` 嵌入已有 Gin 服务） |
 | [`grpc-server`](grpc-server/) | 对外 gRPC / gRPC+TLS（package `grpcserver`） |
-| [`adminui`](adminui/) | 管理预览页（独立端口；可与 HTTP API 分别开关） |
+| [`adminui`](adminui/) | 管理预览页（React 静态资源 `//go:embed`；独立端口；可与 HTTP API 分别开关） |
 | [`api/`](api/) | 公开契约：OpenAPI、`proto`、Go 生成代码 |
 | `config` | viper 配置、热加载 |
 | `pki` | 自签 CA 与服务端 TLS 证书 |
@@ -196,13 +196,19 @@ curl -s -X POST http://localhost:8080/v1/bindings \
 
 ## 管理预览页
 
-开启 `admin.enable` 后，访问 `http://<admin.host>:<admin.port>/`，使用 Basic Auth 登录。页面提供只读的可视化预览：
+前端源码在 [`adminui/web`](adminui/web/)（Vite + React）。构建产物写入 `adminui/static/` 并由 Go 嵌入二进制：
 
-- `GET /api/bindings`：全部边的 JSON；
-- `GET /api/policy`：当前策略的规范文本；
-- `POST /api/enforce`、`GET /api/reachable`：在页面上直接试算。
+```bash
+make -C kernal admin-ui   # 或 cd adminui/web && npm ci && npm run build
+go build -o rbac-server ./cmd/rbac
+```
 
-管理页仅用于预览与试算，写操作请走 `/v1/*` API。
+开启 `admin.enable` 后，访问 `http://<admin.host>:<admin.port>/`，使用 Basic Auth 登录。控制台支持绑定 CRUD、启停、策略试算与原文查看。Admin JSON（`/api/*`，带 Basic Auth，不在 OpenAPI 中）与公开 `/v1/*` 语义对齐，例如：
+
+- `GET/POST/PUT/DELETE /api/bindings`、`PATCH /api/bindings/enabled`；
+- `GET /api/policy`、`POST /api/enforce`、`GET /api/reachable`。
+
+自动化集成仍应使用无鉴权的 `/v1/*` 或 gRPC，并自行做网络隔离。
 
 ## 策略文件格式
 

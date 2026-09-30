@@ -1,3 +1,8 @@
+# Build React admin UI into adminui/static/ for //go:embed.
+.PHONY: admin-ui
+admin-ui:
+	cd adminui/web && npm ci && npm run build
+
 # Regenerate protobuf stubs (requires protoc, protoc-gen-go, protoc-gen-go-grpc).
 .PHONY: proto
 proto:

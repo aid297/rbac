@@ -2,12 +2,14 @@ package adminui
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/aid297/rbac/kernal/config"
@@ -28,7 +30,10 @@ func TestBasicAuthAndQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	creds := NewCreds("admin", "admin")
-	ts := httptest.NewServer(NewHandler(s, creds, []byte("<html>ok</html>")))
+	testUI := fstest.MapFS{
+		"static/index.html": &fstest.MapFile{Data: []byte("<html>ok</html>")},
+	}
+	ts := httptest.NewServer(NewHandler(s, creds, fs.FS(testUI)))
 	t.Cleanup(ts.Close)
 
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/", nil)
@@ -77,6 +82,54 @@ func TestBasicAuthAndQuery(t *testing.T) {
 	}
 	if !en.Allow {
 		t.Fatal("enforce")
+	}
+}
+
+func TestAdminBindingsWrite(t *testing.T) {
+	s, err := persist.Open(filepath.Join(t.TempDir(), persist.DefaultFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	creds := NewCreds("admin", "admin")
+	testUI := fstest.MapFS{"static/index.html": &fstest.MapFile{Data: []byte("x")}}
+	ts := httptest.NewServer(NewHandler(s, creds, fs.FS(testUI)))
+	t.Cleanup(ts.Close)
+
+	body := `{"src":"u1","dst":"p1","enabled":true,"conditions":[{"kind":"ALL"}]}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/bindings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth("admin", "admin")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatal(res.Status)
+	}
+
+	req, _ = http.NewRequest(http.MethodPatch, ts.URL+"/api/bindings/enabled", strings.NewReader(`{"src":"u1","dst":"p1","enabled":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth("admin", "admin")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatal(res.Status)
+	}
+
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/bindings?src=u1&dst=p1", nil)
+	req.SetBasicAuth("admin", "admin")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatal(res.Status)
 	}
 }
 
