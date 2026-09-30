@@ -5,6 +5,8 @@
 *.so
 *.dylib
 /cmd/rbac/rbac
+# kernal/rbac is the library package directory — never name a build output "rbac"
+/rbac-server
 
 # Cross-compiled release binaries (e.g. darwin-arm64.rbac)
 /cmd/rbac/*.rbac

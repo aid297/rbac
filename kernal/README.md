@@ -43,16 +43,17 @@ Go module `github.com/aid297/rbac/kernal`：**RBAC 授权内核**（策略引擎
 要求：Go 1.27+。
 
 ```bash
-# 构建
-go build -o rbac ./cmd/rbac
+# 构建（注意：输出名不要用 rbac —— kernal/rbac 是库包目录，
+# `go build -o rbac` 会把二进制写进该目录）
+go build -o rbac-server ./cmd/rbac
 
 # 用默认配置运行（读取 ./config.yaml，缺失则用内置默认值）
-./rbac
+./rbac-server
 
 # 指定配置文件
-./rbac --config /path/to/config.yaml
+./rbac-server --config /path/to/config.yaml
 # 或用环境变量（优先级高于 --config）
-RBAC_CONFIG=/path/to/config.yaml ./rbac
+RBAC_CONFIG=/path/to/config.yaml ./rbac-server
 ```
 
 默认所有服务（HTTP / HTTPS / gRPC / gRPC+TLS / admin）都是关闭的，进程仅完成存储初始化后等待信号。要对外提供服务，请在 `config.yaml` 中打开对应开关。例如开启 HTTP 与管理页：

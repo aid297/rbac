@@ -3,6 +3,7 @@
 # Runtime policy and CA material when the server is started from the repo root
 /stats/
 /secret/
+/logs/
 /rbac
 
 # macOS

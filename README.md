@@ -23,8 +23,8 @@
 
 ```bash
 cd kernal
-go build -o rbac ./cmd/rbac
-./rbac --config config.yaml   # 默认所有服务关闭，需在配置中开启 http/https/admin
+go build -o rbac-server ./cmd/rbac
+./rbac-server --config config.yaml   # 默认所有服务关闭，需在配置中开启 http/https/admin
 ```
 
 在 Go 程序中用 SDK 接入（详见 [`sdk-go/README.md`](sdk-go/README.md)）：
