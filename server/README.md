@@ -106,6 +106,8 @@ admin:
 
 ## HTTP API
 
+**机器可读契约**：[`api/openapi.yaml`](api/openapi.yaml)（OpenAPI 3）。集成说明与其它语言代码生成见 [`api/README.md`](api/README.md)。
+
 所有接口以 JSON 交互，请求体上限 1 MiB。当存储处于暂停状态（如对账失败）时，除 `/healthz` 外的接口返回 `503`。
 
 | 方法 | 路径 | 说明 |
@@ -121,7 +123,7 @@ admin:
 
 ## gRPC API
 
-服务定义见 [`api/proto/rbac/v1/rbac.proto`](api/proto/rbac/v1/rbac.proto)，生成代码在 `api/gen/rbac/v1/`。语义与上表 HTTP `/v1`（含 `/healthz`、`/v1/ca-cert`）一一对应：
+**机器可读契约**：[`api/proto/rbac/v1/rbac.proto`](api/proto/rbac/v1/rbac.proto)（与 [`api/openapi.yaml`](api/openapi.yaml) 语义对齐）。生成代码在 `api/gen/rbac/v1/`。语义与上表 HTTP `/v1`（含 `/healthz`、`/v1/ca-cert`）一一对应：
 
 | RPC | 对应 HTTP | 典型错误码 |
 | --- | --- | --- |

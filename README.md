@@ -11,8 +11,11 @@
 | [`sdk-rust/`](sdk-rust/) | Rust crate `rbac-sdk-rs`（库名 `rbac`）：对接同一 `/v1` API 的官方 Rust 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
 | [`sdk-csharp/`](sdk-csharp/) | .NET 包 `Rbac.Sdk.Cs`（命名空间 `Rbac`）：对接同一 `/v1` API 的官方 C# 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
 | [`sdk-ts/`](sdk-ts/) | npm 包 `rbac-sdk-ts`：对接同一 `/v1` API 的官方 TypeScript/JavaScript 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
+| [`server/api/`](server/api/) | **公开契约**：[`openapi.yaml`](server/api/openapi.yaml)（HTTP JSON）与 [`proto/rbac/v1/rbac.proto`](server/api/proto/rbac/v1/rbac.proto)（gRPC），供第三方代码生成与其它语言集成 |
 
 设计文档见 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
+
+未使用官方 SDK 时，见 [`server/api/README.md`](server/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。
 
 ## 快速开始
 

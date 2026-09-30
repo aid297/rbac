@@ -1,0 +1,454 @@
+openapi: 3.0.3
+info:
+  title: RBAC authorization service
+  description: |
+    Public HTTP JSON API for the RBAC microservice (`/v1` plus liveness and CA export).
+
+    - Request bodies are limited to **1 MiB**. Unknown JSON fields are rejected.
+    - **`/v1` has no authentication** (callers must protect network access).
+    - When policy storage is **paused** (e.g. reconciliation failure), every path except
+      `GET /healthz` returns **503** with `{"error":"service paused","reason":"..."}`.
+    - gRPC exposes the same semantics; see `proto/rbac/v1/rbac.proto` and
+      [`README.md`](README.md) for RPC mapping and status codes.
+
+    Official hand-maintained SDKs: Go, TypeScript, Rust, C# (this spec is for third-party
+    clients and code generation).
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local HTTP (default port from config)
+  - url: https://localhost:8443
+    description: Local HTTPS (when enabled)
+
+# `/v1` is intentionally unauthenticated; protect at the network or gateway.
+security: []
+
+tags:
+  - name: health
+  - name: tls
+  - name: enforce
+  - name: bindings
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: health
+      summary: Liveness and pause status
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthOk"
+              example:
+                status: ok
+        "503":
+          description: Service is paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthPaused"
+              example:
+                status: paused
+                reason: reconciliation failed
+
+  /v1/ca-cert:
+    get:
+      tags: [tls]
+      operationId: getCaCert
+      summary: PEM-encoded CA certificate (HTTPS trust anchor)
+      responses:
+        "200":
+          description: PEM file body
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+                format: binary
+        "500":
+          description: CA not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+
+  /v1/enforce:
+    post:
+      tags: [enforce]
+      operationId: enforce
+      summary: Whether subject can reach target under optional scenarios and time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnforceRequest"
+      responses:
+        "200":
+          description: Decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnforceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+
+  /v1/reachable:
+    get:
+      tags: [enforce]
+      operationId: reachable
+      summary: All nodes reachable from subject (includes subject itself)
+      parameters:
+        - name: subject
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          required: false
+          description: Repeat for multiple scenarios (`?scenario=A&scenario=B`).
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Reachability result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReachableResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+
+  /v1/bindings:
+    get:
+      tags: [bindings]
+      operationId: listOrGetBinding
+      summary: List all bindings, or fetch one when src and dst are set
+      parameters:
+        - name: src
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: dst
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: |
+            With no `src`/`dst` query params, returns a list wrapper.
+            With both `src` and `dst`, returns a single binding object (404 if missing).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ListBindingsResponse"
+                  - $ref: "#/components/schemas/Binding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+    post:
+      tags: [bindings]
+      operationId: addBinding
+      summary: Create a binding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindingInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Binding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+    put:
+      tags: [bindings]
+      operationId: updateBinding
+      summary: Replace an existing binding (does not create)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindingInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Binding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+    delete:
+      tags: [bindings]
+      operationId: removeBinding
+      summary: Delete a binding
+      parameters:
+        - name: src
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: dst
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+
+  /v1/bindings/enabled:
+    patch:
+      tags: [bindings]
+      operationId: setEnabled
+      summary: Enable or disable a binding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetEnabledRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetEnabledResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServicePaused"
+
+components:
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    NotFound:
+      description: Binding not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    Conflict:
+      description: Duplicate binding
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    ServicePaused:
+      description: Storage paused; API unavailable except health
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PausedErrorBody"
+
+  schemas:
+    HealthOk:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    HealthPaused:
+      type: object
+      required: [status, reason]
+      properties:
+        status:
+          type: string
+          enum: [paused]
+        reason:
+          type: string
+
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    PausedErrorBody:
+      type: object
+      required: [error, reason]
+      properties:
+        error:
+          type: string
+          example: service paused
+        reason:
+          type: string
+
+    EnforceRequest:
+      type: object
+      required: [subject, target]
+      properties:
+        subject:
+          type: string
+        target:
+          type: string
+        scenarios:
+          type: array
+          items:
+            type: string
+        now:
+          type: string
+          format: date-time
+          description: RFC3339; defaults to server time when omitted
+
+    EnforceResponse:
+      type: object
+      required: [allow]
+      properties:
+        allow:
+          type: boolean
+
+    ReachableResponse:
+      type: object
+      required: [subject, reachable]
+      properties:
+        subject:
+          type: string
+        reachable:
+          type: array
+          items:
+            type: string
+
+    Condition:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [ALL, TIME]
+        start:
+          type: string
+          format: date-time
+          description: TIME only; inclusive start of half-open [start, end)
+        end:
+          type: string
+          format: date-time
+          description: TIME only; exclusive end
+
+    BindingInput:
+      type: object
+      required: [src, dst]
+      properties:
+        src:
+          type: string
+        dst:
+          type: string
+        scenario:
+          type: string
+          default: ""
+        enabled:
+          type: boolean
+          default: true
+          description: Omitted in JSON defaults to true on create
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Condition"
+          description: Omitted defaults to ALL
+
+    Binding:
+      allOf:
+        - $ref: "#/components/schemas/BindingInput"
+        - type: object
+          required: [enabled, conditions]
+          properties:
+            enabled:
+              type: boolean
+            conditions:
+              type: array
+              items:
+                $ref: "#/components/schemas/Condition"
+
+    ListBindingsResponse:
+      type: object
+      required: [bindings]
+      properties:
+        bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Binding"
+
+    SetEnabledRequest:
+      type: object
+      required: [src, dst, enabled]
+      properties:
+        src:
+          type: string
+        dst:
+          type: string
+        scenario:
+          type: string
+          default: ""
+        enabled:
+          type: boolean
+
+    SetEnabledResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
