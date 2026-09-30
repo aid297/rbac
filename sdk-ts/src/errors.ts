@@ -64,6 +64,16 @@ export class ConfigError extends Error {
 }
 
 /**
+ * Error thrown when calling a method on a closed client.
+ */
+export class ClosedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ClosedError';
+  }
+}
+
+/**
  * Helper functions to check error types.
  */
 export const ApiErrors = {

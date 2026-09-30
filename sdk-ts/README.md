@@ -1,6 +1,6 @@
 # sdk-ts
 
-rbac 授权微服务的官方 TypeScript/JavaScript 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS），对应 Go 侧的 [`sdk-go`](../sdk-go/)、Rust 侧的 [`sdk-rust`](../sdk-rust/) 和 C# 侧的 [`sdk-csharp`](../sdk-csharp/)。
+rbac 授权微服务的官方 TypeScript/JavaScript 客户端 SDK。封装服务端 `/v1` REST API（HTTP / HTTPS）与 gRPC，对应 Go 侧的 [`sdk-go`](../sdk-go/)、Rust 侧的 [`sdk-rust`](../sdk-rust/) 和 C# 侧的 [`sdk-csharp`](../sdk-csharp/)。
 
 ```typescript
 import { Client } from 'rbac-sdk-ts';
@@ -9,7 +9,7 @@ const client = new Client('http://localhost:8080');
 const allow = await client.enforce('alice', 'doc:42');
 ```
 
-要求：Node.js 18+。
+要求：Node.js 18+。HTTP 与 gRPC 共用同一套 API；gRPC 依赖 `@grpc/grpc-js` 与 `@grpc/proto-loader`（proto 已 vendored 在 `proto/`，运行时动态加载，无需 `protoc`）。
 
 ## 安装
 
@@ -52,6 +52,39 @@ console.log(`可达节点: ${nodes.join(', ')}`);
 ```
 
 `Client` 可在整个应用中安全复用。默认请求超时 **30 秒**。
+
+### gRPC
+
+与 HTTP 共用同一套方法；用 `GrpcClient` 连接服务端 `server.grpc` / `server.grpc_tls` 端口：
+
+```typescript
+import { GrpcClient } from 'rbac-sdk-ts';
+
+// 明文 gRPC（server.grpc.port，默认 9080）
+const client = new GrpcClient('localhost:9080');
+const allow = await client.enforce('alice', 'doc:42');
+
+// gRPC + TLS（server.grpc_tls.port，默认 9443），信任自签 CA
+const tlsClient = new GrpcClient('localhost:9443', {
+  caCertFile: 'secret/ca.crt',
+});
+
+// 或跳过校验（仅测试）
+const insecureClient = new GrpcClient('localhost:9443', {
+  insecureSkipVerify: true,
+});
+
+// 用完后关闭
+await client.close();
+```
+
+- `target` 为 `host:port`，不要写 `http://` / `grpc://`。
+- 未配置 CA / `insecureSkipVerify` 时使用**明文**传输（对应服务端 `grpc.enable`）。
+- 配置了 `caCert` / `caCertFile` 或 `insecureSkipVerify` 时走 **TLS**（对应 `grpc_tls`）。
+- `timeout: 0` 表示不设超时。
+- 用完后应调用 `close()` 释放 gRPC channel。
+
+gRPC 业务错误映射为与 HTTP 相同的 `ApiError` / `ApiErrors` 谓词。服务暂停为 `FailedPrecondition` → 503（`isPaused`）；传输层 `Unavailable` 等保留为原始 gRPC 错误，不会被 `isPaused` 命中。可用 `isGrpcError` 区分。
 
 ### 参数说明
 
@@ -422,6 +455,12 @@ cd sdk-ts
 npm install
 npm run build
 npm test
+```
+
+gRPC proto 已 vendored 在 `proto/rbac/v1/rbac.proto`，运行时由 `@grpc/proto-loader` 动态加载，无需 `protoc`。在 monorepo 内同步服务端 proto：
+
+```bash
+cp ../server/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
 ```
 
 ## 许可

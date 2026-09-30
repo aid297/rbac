@@ -7,11 +7,8 @@ import {
   BindingsResponse,
   HealthResponse,
 } from './types';
+import { VERSION } from './version';
 
-/**
- * SDK version for User-Agent header.
- */
-const VERSION = '0.1.0';
 const DEFAULT_USER_AGENT = `rbac-sdk-ts/${VERSION}`;
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024; // 4MB

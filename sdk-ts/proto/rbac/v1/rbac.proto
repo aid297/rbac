@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package rbac.v1;
+
+option go_package = "github.com/aid297/rbac/server/api/gen/rbac/v1;rbacv1";
+
+import "google/protobuf/timestamp.proto";
+
+// RbacService mirrors the HTTP /v1 REST API (plus /healthz and /v1/ca-cert).
+service RbacService {
+  // Health checks liveness. Returns FAILED_PRECONDITION when the service is
+  // paused (HTTP GET /healthz → 503). Transport failures use UNAVAILABLE and
+  // must not be confused with pause.
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  // GetCACert returns the PEM-encoded CA certificate (HTTP GET /v1/ca-cert).
+  rpc GetCACert(GetCACertRequest) returns (GetCACertResponse);
+
+  // Enforce reports whether subject can reach target (HTTP POST /v1/enforce).
+  rpc Enforce(EnforceRequest) returns (EnforceResponse);
+
+  // Reachable lists every node subject can reach, including itself
+  // (HTTP GET /v1/reachable).
+  rpc Reachable(ReachableRequest) returns (ReachableResponse);
+
+  // ListBindings returns all bindings (HTTP GET /v1/bindings with no query).
+  rpc ListBindings(ListBindingsRequest) returns (ListBindingsResponse);
+
+  // GetBinding fetches one binding by (src, dst, scenario)
+  // (HTTP GET /v1/bindings?src&dst&scenario).
+  rpc GetBinding(GetBindingRequest) returns (Binding);
+
+  // AddBinding creates a binding (HTTP POST /v1/bindings).
+  // ALREADY_EXISTS on duplicate.
+  rpc AddBinding(Binding) returns (Binding);
+
+  // UpdateBinding replaces an existing binding (HTTP PUT /v1/bindings).
+  // NOT_FOUND if absent (does not create).
+  rpc UpdateBinding(Binding) returns (Binding);
+
+  // SetEnabled toggles a binding's enabled flag
+  // (HTTP PATCH /v1/bindings/enabled).
+  rpc SetEnabled(SetEnabledRequest) returns (SetEnabledResponse);
+
+  // RemoveBinding deletes a binding (HTTP DELETE /v1/bindings).
+  rpc RemoveBinding(RemoveBindingRequest) returns (RemoveBindingResponse);
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  // "ok" when healthy. When paused, the RPC returns FAILED_PRECONDITION instead
+  // (not UNAVAILABLE, which is reserved for transport-level failures).
+  string status = 1;
+  string reason = 2;
+}
+
+message GetCACertRequest {}
+
+message GetCACertResponse {
+  // PEM-encoded CA certificate bytes.
+  bytes pem = 1;
+}
+
+message EnforceRequest {
+  string subject = 1;
+  string target = 2;
+  repeated string scenarios = 3;
+  // When unset, the service uses its own current time.
+  google.protobuf.Timestamp now = 4;
+}
+
+message EnforceResponse {
+  bool allow = 1;
+}
+
+message ReachableRequest {
+  string subject = 1;
+  repeated string scenarios = 2;
+}
+
+message ReachableResponse {
+  string subject = 1;
+  repeated string reachable = 2;
+}
+
+message Condition {
+  // "ALL" or "TIME" (case-sensitive, matching the HTTP JSON wire format).
+  string kind = 1;
+  // TIME only: inclusive start of half-open [start, end). Unset = unbounded.
+  google.protobuf.Timestamp start = 2;
+  // TIME only: exclusive end. Unset = unbounded.
+  google.protobuf.Timestamp end = 3;
+}
+
+message Binding {
+  string src = 1;
+  string dst = 2;
+  string scenario = 3;
+  // When unset on Add/Update, the service defaults to true (same as HTTP omit).
+  optional bool enabled = 4;
+  repeated Condition conditions = 5;
+}
+
+message ListBindingsRequest {}
+
+message ListBindingsResponse {
+  repeated Binding bindings = 1;
+}
+
+message GetBindingRequest {
+  string src = 1;
+  string dst = 2;
+  string scenario = 3;
+}
+
+message SetEnabledRequest {
+  string src = 1;
+  string dst = 2;
+  string scenario = 3;
+  bool enabled = 4;
+}
+
+message SetEnabledResponse {
+  bool ok = 1;
+}
+
+message RemoveBindingRequest {
+  string src = 1;
+  string dst = 2;
+  string scenario = 3;
+}
+
+message RemoveBindingResponse {}

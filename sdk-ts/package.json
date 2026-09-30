@@ -1,7 +1,7 @@
 {
   "name": "rbac-sdk-ts",
-  "version": "0.1.0",
-  "description": "Official TypeScript/JavaScript client SDK for the rbac authorization microservice /v1 API",
+  "version": "0.1.1",
+  "description": "Official TypeScript/JavaScript client SDK for the rbac authorization microservice /v1 API (HTTP + gRPC)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -14,7 +14,8 @@
     "rbac",
     "authorization",
     "acl",
-    "typescript"
+    "typescript",
+    "grpc"
   ],
   "author": "aid297",
   "license": "MIT",
@@ -25,6 +26,14 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "proto"
+  ],
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
