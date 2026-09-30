@@ -1,0 +1,14 @@
+# Build context is the repo root (docker build -f server/Dockerfile .).
+# Everything under server/ is needed; keep the SDKs, git data and build
+# artifacts out of the image.
+.git
+.github
+.sdk-*/
+sdk-go
+sdk-rust
+sdk-ts
+sdk-csharp
+**/node_modules
+**/target
+**/dist
+**/*.log

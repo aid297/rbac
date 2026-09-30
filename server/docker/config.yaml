@@ -1,0 +1,45 @@
+log:
+  level: info
+  # /dev/stdout = `docker logs` (logging is file-only unless debug, and an
+  # empty file would fall back to <configDir>/logs/rbac.log, which is
+  # read-only for the non-root user).
+  file: /dev/stdout
+  debug: false
+
+policy:
+  dir: /var/lib/rbac/data
+  encrypt: false
+  crypto: aes-256-gcm
+  key: ""
+
+# Self-signed CA and leaf certificate are generated here on first start
+# (ECDSA P-256). SDKs can fetch the CA via the /v1/ca-cert endpoint.
+ca:
+  dir: /var/lib/rbac/secret
+
+cache:
+  enable: false
+
+server:
+  http:
+    enable: true
+    host: 0.0.0.0
+    port: 8080
+  https:
+    enable: true
+    port: 8443
+  grpc:
+    enable: true
+    host: 0.0.0.0
+    port: 9080
+  grpc_tls:
+    enable: true
+    port: 9443
+
+# Disabled by default — enable explicitly when needed (auth required).
+admin:
+  enable: false
+  username: admin
+  password: admin
+  host: 127.0.0.1
+  port: 9090
