@@ -969,7 +969,7 @@ const file_rbac_v1_rbac_proto_rawDesc = "" +
 	"\rUpdateBinding\x12\x10.rbac.v1.Binding\x1a\x10.rbac.v1.Binding\x12E\n" +
 	"\n" +
 	"SetEnabled\x12\x1a.rbac.v1.SetEnabledRequest\x1a\x1b.rbac.v1.SetEnabledResponse\x12N\n" +
-	"\rRemoveBinding\x12\x1d.rbac.v1.RemoveBindingRequest\x1a\x1e.rbac.v1.RemoveBindingResponseB6Z4github.com/aid297/rbac/server/api/gen/rbac/v1;rbacv1b\x06proto3"
+	"\rRemoveBinding\x12\x1d.rbac.v1.RemoveBindingRequest\x1a\x1e.rbac.v1.RemoveBindingResponseB6Z4github.com/aid297/rbac/kernal/api/gen/rbac/v1;rbacv1b\x06proto3"
 
 var (
 	file_rbac_v1_rbac_proto_rawDescOnce sync.Once

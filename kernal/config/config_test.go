@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/kernal/rbac/persist"
 )
 
 func TestEnvBeatsFlagBeatsDefault(t *testing.T) {

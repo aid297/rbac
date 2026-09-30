@@ -1,4 +1,4 @@
-package httpsvc
+package httpserver
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aid297/rbac/server/pki"
+	"github.com/aid297/rbac/kernal/pki"
 )
 
 func TestHTTPSSelfSignedRoundTrip(t *testing.T) {

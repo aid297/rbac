@@ -1,4 +1,4 @@
-package httpsvc
+package httpserver
 
 import (
 	"bytes"
@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/policy"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/rbac/policy"
 )
 
 func testStore(t *testing.T) *persist.Store {

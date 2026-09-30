@@ -1,6 +1,8 @@
-# rbac
+# kernal
 
-一个用 Go 编写的轻量级 RBAC（基于关系的访问控制）授权微服务。它以**有向图**建模权限：每条边表示一个主体（subject）到目标（target）的授权关系，支持时间窗口、场景（scenario）等条件，并提供 HTTP / HTTPS API 与一个带鉴权的管理预览页。
+Go module `github.com/aid297/rbac/kernal`：**RBAC 授权内核**（策略引擎 + 持久化）与可选的对外服务（HTTP、gRPC、Admin UI）。单进程二进制 `cmd/rbac` 通过配置开关各 listener；核心业务在 [`rbac/`](rbac/README.md)，可被其它 Go 程序**直接 import**（无需走 SDK / 网络）。
+
+它以**有向图**建模权限：每条边表示一个主体（subject）到目标（target）的授权关系，支持时间窗口、场景（scenario）等条件。
 
 权限判定通过图的可达性完成：`Enforce(subject, target)` 判断在给定上下文下，subject 能否经由若干条**有效边**到达 target。
 
@@ -21,20 +23,20 @@
 
 ## 项目结构
 
-| 包 | 职责 |
+| 路径 | 职责 |
 | --- | --- |
-| `cmd/rbac` | 进程入口，装配配置、存储、缓存、PKI 与各服务 |
-| `policy` | 权限引擎内核：数据模型、条件求值、可达性遍历、序列化、COW 快照 |
-| `persist` | 策略存储：文件读写、加密、Redis 缓存、异步落盘、对账（reconcile）与暂停控制 |
-| `cache` | Redis 客户端封装 |
-| `crypto` | 加密算法注册表（AES-GCM、SM4）与密钥生成 |
-| `config` | 基于 viper 的配置加载、默认值补全、密钥/CA 落地、配置热加载 |
-| `pki` | 自签 CA 与服务端 TLS 证书生成 |
-| `httpsvc` | 对外 HTTP / HTTPS REST API |
-| `grpcsvc` | 对外 gRPC / gRPC+TLS API（与 `/v1` 语义对齐） |
-| `api/proto` | protobuf 定义（`rbac.v1`） |
-| `adminui` | 管理预览页（HTML + 只读 JSON API，Basic Auth） |
+| [`rbac/policy`](rbac/policy/) | 权限引擎：数据模型、条件求值、可达性、序列化、COW 快照 |
+| [`rbac/persist`](rbac/persist/) | 策略存储：文件、加密、Redis 副本、对账与暂停 |
+| [`rbac/cache`](rbac/cache/) | Redis 客户端（供 persist 选用） |
+| [`rbac/crypto`](rbac/crypto/) | 策略文件加密算法（AES-GCM、SM4） |
+| [`http-server`](http-server/) | 对外 HTTP / HTTPS `/v1` REST（package `httpserver`） |
+| [`grpc-server`](grpc-server/) | 对外 gRPC / gRPC+TLS（package `grpcserver`） |
+| [`adminui`](adminui/) | 管理预览页（独立端口；可与 HTTP API 分别开关） |
+| [`api/`](api/) | 公开契约：OpenAPI、`proto`、Go 生成代码 |
+| `config` | viper 配置、热加载 |
+| `pki` | 自签 CA 与服务端 TLS 证书 |
 | `svcctl` | HTTP/gRPC 共享的 in-flight 引流门闩 |
+| `cmd/rbac` | **单一二进制**：按配置启动 admin / http-server / grpc-server |
 
 ## 快速开始
 

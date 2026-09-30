@@ -1,14 +1,14 @@
 # rbac server image — multi-stage static build.
-# Build from repo root:   docker build -f server/Dockerfile -t rbac:latest .
+# Build from repo root:   docker build -f kernal/Dockerfile -t rbac:latest .
 
 FROM golang:1.27-alpine AS build
 WORKDIR /src
 
 # Cache deps first: copy only module files.
-COPY server/go.mod server/go.sum ./
+COPY kernal/go.mod kernal/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-COPY server/ ./
+COPY kernal/ ./
 # Static binary — no cgo anywhere in the dependency tree (verified: gmsm, go-redis,
 # miniredis, zap are pure Go), so the image needs no runtime libc.
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -28,7 +28,7 @@ COPY --from=build /out/rbac /usr/local/bin/rbac
 
 # Default config: all four API listeners on, admin off, logs to stdout.
 # Override by mounting your own file at /etc/rbac/config.yaml.
-COPY server/docker/config.yaml /etc/rbac/config.yaml
+COPY kernal/docker/config.yaml /etc/rbac/config.yaml
 ENV RBAC_CONFIG=/etc/rbac/config.yaml
 
 USER rbac

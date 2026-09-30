@@ -6,23 +6,23 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| [`server/`](server/) | Go module `github.com/aid297/rbac/server`：HTTP / HTTPS / gRPC / gRPC+TLS、管理预览页、文件持久化、可选 Redis 缓存、可选静态加密、自签 CA |
+| [`kernal/`](kernal/) | Go module `github.com/aid297/rbac/kernal`：RBAC 内核（`rbac/` 可库引用）+ HTTP/gRPC/Admin 服务、持久化、Redis、加密、自签 CA |
 | [`sdk-go/`](sdk-go/) | Go module `github.com/aid297/rbac/sdk-go`：对接 `/v1` 的官方 Go 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
 | [`sdk-rust/`](sdk-rust/) | Rust crate `rbac-sdk-rs`（库名 `rbac`）：对接同一 `/v1` API 的官方 Rust 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
 | [`sdk-csharp/`](sdk-csharp/) | .NET 包 `Rbac.Sdk.Cs`（命名空间 `Rbac`）：对接同一 `/v1` API 的官方 C# 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
 | [`sdk-ts/`](sdk-ts/) | npm 包 `rbac-sdk-ts`：对接同一 `/v1` API 的官方 TypeScript/JavaScript 客户端（HTTP/HTTPS + gRPC/gRPC+TLS） |
-| [`server/api/`](server/api/) | **公开契约**：[`openapi.yaml`](server/api/openapi.yaml)（HTTP JSON）与 [`proto/rbac/v1/rbac.proto`](server/api/proto/rbac/v1/rbac.proto)（gRPC），供第三方代码生成与其它语言集成 |
+| [`kernal/api/`](kernal/api/) | **公开契约**：[`openapi.yaml`](kernal/api/openapi.yaml)（HTTP JSON）与 [`proto/rbac/v1/rbac.proto`](kernal/api/proto/rbac/v1/rbac.proto)（gRPC），供第三方代码生成与其它语言集成 |
 
 设计文档见 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
 
-未使用官方 SDK 时，见 [`server/api/README.md`](server/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。**改 API 或给 AI/贡献者看整体约定**：[`docs/INTEGRATION.md`](docs/INTEGRATION.md)。
+未使用官方 SDK 时，见 [`kernal/api/README.md`](kernal/api/README.md)（OpenAPI Generator、protoc 示例与 raw URL）。**改 API 或给 AI/贡献者看整体约定**：[`docs/INTEGRATION.md`](docs/INTEGRATION.md)。
 
 ## 快速开始
 
-启动服务端（详见 [`server/README.md`](server/README.md)）：
+启动服务端（详见 [`kernal/README.md`](kernal/README.md)）：
 
 ```bash
-cd server
+cd kernal
 go build -o rbac ./cmd/rbac
 ./rbac --config config.yaml   # 默认所有服务关闭，需在配置中开启 http/https/admin
 ```
@@ -70,7 +70,7 @@ const allow = await client.enforce('alice', 'doc:42');
 
 ```bash
 # 服务端
-cd server && go test -race ./...
+cd kernal && go test -race ./...
 
 # Go SDK
 cd sdk-go && go test -race ./...

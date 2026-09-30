@@ -1,4 +1,4 @@
-package httpsvc
+package httpserver
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/svcctl"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/svcctl"
 )
 
 // Options configures HTTP and/or HTTPS listeners.
@@ -29,13 +29,13 @@ type Options struct {
 // Serve runs HTTP and/or HTTPS until ctx is cancelled. Empty addrs are skipped.
 func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 	if store == nil {
-		return fmt.Errorf("httpsvc: nil store")
+		return fmt.Errorf("httpserver: nil store")
 	}
 	if opt.HTTPAddr == "" && opt.HTTPSAddr == "" {
 		return nil
 	}
 	if opt.HTTPSAddr != "" && opt.TLSCert == nil {
-		return fmt.Errorf("httpsvc: TLS certificate required for HTTPS")
+		return fmt.Errorf("httpserver: TLS certificate required for HTTPS")
 	}
 
 	gate := opt.Gate

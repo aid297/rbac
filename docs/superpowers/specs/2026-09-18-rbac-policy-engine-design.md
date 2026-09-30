@@ -6,18 +6,18 @@
 
 ## 文档勘误（阅读必读）
 
-**① Policy 引擎**（数据模型、条件/场景、COW 快照、Enforce/Reachable、序列化思路）仍以本文 **§2 及以后** 为主要设计参考，实现位于 [`server/policy/`](../../../server/policy/)。行为摘要见 [`server/README.md`](../../../server/README.md)「能做什么」。
+**① Policy 引擎**（数据模型、条件/场景、COW 快照、Enforce/Reachable、序列化思路）仍以本文 **§2 及以后** 为主要设计参考，实现位于 [`kernal/rbac/policy/`](../../../kernal/rbac/policy/)。行为摘要见 [`kernal/README.md`](../../../kernal/README.md)「能做什么」。
 
 **子系统路线图（§1 建设顺序、§6.7 与「子系统 ⑤ 尚未提供」等）** 撰写时 ②–⑤ 未合入本仓库；**当前实现映射**（无单独后续 spec 文件）：
 
 | 设计中的子系统 | 当前代码（约） |
 | --- | --- |
-| ② 持久化 | [`server/persist/`](../../../server/persist/) |
-| ③ 配置 | [`server/config/`](../../../server/config/) |
-| ④ PKI | [`server/pki/`](../../../server/pki/) |
-| ⑤ 多协议 | [`server/httpsvc/`](../../../server/httpsvc/)（HTTP/HTTPS）、[`server/grpcsvc/`](../../../server/grpcsvc/)（gRPC/gRPC+TLS）；**WebSocket / WSS 未实现** |
+| ② 持久化 | [`kernal/rbac/persist/`](../../../kernal/rbac/persist/) |
+| ③ 配置 | [`kernal/config/`](../../../kernal/config/) |
+| ④ PKI | [`kernal/pki/`](../../../kernal/pki/) |
+| ⑤ 多协议 | [`kernal/http-server/`](../../../kernal/http-server/)（HTTP/HTTPS）、[`kernal/grpc-server/`](../../../kernal/grpc-server/)（gRPC/gRPC+TLS）；**WebSocket / WSS 未实现** |
 
-改公开 API 或集成方式：勿依赖本文服务层描述，见 [`docs/INTEGRATION.md`](../../INTEGRATION.md) 与 [`server/api/`](../../../server/api/README.md)。
+改公开 API 或集成方式：勿依赖本文服务层描述，见 [`docs/INTEGRATION.md`](../../INTEGRATION.md) 与 [`kernal/api/`](../../../kernal/api/README.md)。
 
 ---
 

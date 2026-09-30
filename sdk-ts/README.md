@@ -460,7 +460,7 @@ npm test
 gRPC proto 已 vendored 在 `proto/rbac/v1/rbac.proto`，运行时由 `@grpc/proto-loader` 动态加载，无需 `protoc`。在 monorepo 内同步服务端 proto：
 
 ```bash
-cp ../server/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
+cp ../kernal/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
 ```
 
 ## 许可

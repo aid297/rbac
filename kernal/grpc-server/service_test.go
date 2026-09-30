@@ -1,4 +1,4 @@
-package grpcsvc_test
+package grpcserver_test
 
 import (
 	"context"
@@ -14,11 +14,11 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	rbacv1 "github.com/aid297/rbac/server/api/gen/rbac/v1"
-	"github.com/aid297/rbac/server/grpcsvc"
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/policy"
-	"github.com/aid297/rbac/server/svcctl"
+	rbacv1 "github.com/aid297/rbac/kernal/api/gen/rbac/v1"
+	"github.com/aid297/rbac/kernal/grpc-server"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/rbac/policy"
+	"github.com/aid297/rbac/kernal/svcctl"
 )
 
 const bufSize = 1 << 20
@@ -39,7 +39,7 @@ func testClient(t *testing.T, store *persist.Store, ca []byte) rbacv1.RbacServic
 	lis := bufconn.Listen(bufSize)
 	gate := new(svcctl.Gate)
 	srv := grpc.NewServer()
-	rbacv1.RegisterRbacServiceServer(srv, grpcsvc.NewServer(store, ca, gate))
+	rbacv1.RegisterRbacServiceServer(srv, grpcserver.NewServer(store, ca, gate))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 

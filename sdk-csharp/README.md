@@ -9,7 +9,7 @@ using var client = Client.Create("http://localhost:8080");
 var allow = await client.EnforceAsync("alice", "doc:42");
 ```
 
-要求：.NET 10（`net10.0`）。包名 `Rbac.Sdk.Cs`，命名空间 `Rbac`。HTTP 与 gRPC 共用同一套 API；gRPC 依赖 `Grpc.Net.Client` 与 `Google.Protobuf`（桩代码已提交在 `src/Rbac.Sdk/Generated/`，工程可独立构建，无需 `server/` 或 `protoc`）。
+要求：.NET 10（`net10.0`）。包名 `Rbac.Sdk.Cs`，命名空间 `Rbac`。HTTP 与 gRPC 共用同一套 API；gRPC 依赖 `Grpc.Net.Client` 与 `Google.Protobuf`（桩代码已提交在 `src/Rbac.Sdk/Generated/`，工程可独立构建，无需 `kernal/` 或 `protoc`）。
 
 ## 安装
 
@@ -427,7 +427,7 @@ dotnet test
 gRPC 桩自包含于 `src/Rbac.Sdk/Generated/`（对应 `proto/rbac/v1/rbac.proto`）。在 monorepo 内同步服务端 proto 并重新生成：
 
 ```bash
-cp ../server/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
+cp ../kernal/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
 make proto
 ```
 

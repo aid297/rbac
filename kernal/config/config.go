@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/aid297/rbac/server/cache"
-	"github.com/aid297/rbac/server/crypto"
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/pki"
+	"github.com/aid297/rbac/kernal/rbac/cache"
+	"github.com/aid297/rbac/kernal/rbac/crypto"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/pki"
 )
 
 const (

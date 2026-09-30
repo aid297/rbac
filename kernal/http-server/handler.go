@@ -1,4 +1,4 @@
-package httpsvc
+package httpserver
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/policy"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/rbac/policy"
 )
 
 const maxBody = 1 << 20

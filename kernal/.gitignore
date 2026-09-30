@@ -4,7 +4,6 @@
 *.dll
 *.so
 *.dylib
-/rbac
 /cmd/rbac/rbac
 
 # Cross-compiled release binaries (e.g. darwin-arm64.rbac)

@@ -13,15 +13,15 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/aid297/rbac/server/adminui"
-	"github.com/aid297/rbac/server/cache"
-	"github.com/aid297/rbac/server/config"
-	"github.com/aid297/rbac/server/grpcsvc"
-	"github.com/aid297/rbac/server/httpsvc"
-	"github.com/aid297/rbac/server/logging"
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/pki"
-	"github.com/aid297/rbac/server/svcctl"
+	"github.com/aid297/rbac/kernal/adminui"
+	"github.com/aid297/rbac/kernal/rbac/cache"
+	"github.com/aid297/rbac/kernal/config"
+	"github.com/aid297/rbac/kernal/grpc-server"
+	"github.com/aid297/rbac/kernal/http-server"
+	"github.com/aid297/rbac/kernal/logging"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/pki"
+	"github.com/aid297/rbac/kernal/svcctl"
 )
 
 func main() {
@@ -83,8 +83,8 @@ func main() {
 
 	needTLS := cfg.HTTPSEnabled() || cfg.GRPCTLSEnabled()
 
-	httpOpt := httpsvc.Options{CACertPEM: caCertPEM}
-	grpcOpt := grpcsvc.Options{CACertPEM: caCertPEM}
+	httpOpt := httpserver.Options{CACertPEM: caCertPEM}
+	grpcOpt := grpcserver.Options{CACertPEM: caCertPEM}
 	if cfg.HTTPEnabled() {
 		httpOpt.HTTPAddr = cfg.HTTPAddr()
 	}
@@ -179,11 +179,11 @@ func main() {
 	}
 	if cfg.HTTPEnabled() || cfg.HTTPSEnabled() {
 		n++
-		run(func() error { return httpsvc.Serve(ctx, store, httpOpt) })
+		run(func() error { return httpserver.Serve(ctx, store, httpOpt) })
 	}
 	if cfg.GRPCEnabled() || cfg.GRPCTLSEnabled() {
 		n++
-		run(func() error { return grpcsvc.Serve(ctx, store, grpcOpt) })
+		run(func() error { return grpcserver.Serve(ctx, store, grpcOpt) })
 	}
 
 	if n == 0 {

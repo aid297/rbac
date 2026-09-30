@@ -1,4 +1,4 @@
-module github.com/aid297/rbac/server
+module github.com/aid297/rbac/kernal
 
 go 1.27.0
 

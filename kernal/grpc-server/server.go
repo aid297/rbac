@@ -1,4 +1,4 @@
-package grpcsvc
+package grpcserver
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	rbacv1 "github.com/aid297/rbac/server/api/gen/rbac/v1"
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/svcctl"
+	rbacv1 "github.com/aid297/rbac/kernal/api/gen/rbac/v1"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/svcctl"
 )
 
 // Options configures gRPC and/or gRPC+TLS listeners.
@@ -37,13 +37,13 @@ type Options struct {
 // Serve runs plaintext and/or TLS gRPC until ctx is cancelled. Empty addrs are skipped.
 func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 	if store == nil {
-		return fmt.Errorf("grpcsvc: nil store")
+		return fmt.Errorf("grpcserver: nil store")
 	}
 	if opt.Addr == "" && opt.TLSAddr == "" {
 		return nil
 	}
 	if opt.TLSAddr != "" && opt.TLSCert == nil {
-		return fmt.Errorf("grpcsvc: TLS certificate required for gRPC TLS")
+		return fmt.Errorf("grpcserver: TLS certificate required for gRPC TLS")
 	}
 
 	gate := opt.Gate
@@ -77,7 +77,7 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 	if opt.Addr != "" {
 		lis, err := net.Listen("tcp", opt.Addr)
 		if err != nil {
-			return fmt.Errorf("grpcsvc: listen %s: %w", opt.Addr, err)
+			return fmt.Errorf("grpcserver: listen %s: %w", opt.Addr, err)
 		}
 		s := grpc.NewServer()
 		rbacv1.RegisterRbacServiceServer(s, svc)
@@ -89,7 +89,7 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 			for _, s := range servers {
 				s.Stop()
 			}
-			return fmt.Errorf("grpcsvc: listen TLS %s: %w", opt.TLSAddr, err)
+			return fmt.Errorf("grpcserver: listen TLS %s: %w", opt.TLSAddr, err)
 		}
 		creds := credentials.NewServerTLSFromCert(opt.TLSCert)
 		s := grpc.NewServer(grpc.Creds(creds))

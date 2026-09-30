@@ -1,4 +1,4 @@
-package grpcsvc
+package grpcserver
 
 import (
 	"context"
@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	rbacv1 "github.com/aid297/rbac/server/api/gen/rbac/v1"
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/policy"
-	"github.com/aid297/rbac/server/svcctl"
+	rbacv1 "github.com/aid297/rbac/kernal/api/gen/rbac/v1"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/rbac/policy"
+	"github.com/aid297/rbac/kernal/svcctl"
 )
 
 // Server implements rbac.v1.RbacService.

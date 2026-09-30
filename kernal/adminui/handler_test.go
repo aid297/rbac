@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aid297/rbac/server/config"
-	"github.com/aid297/rbac/server/persist"
-	"github.com/aid297/rbac/server/policy"
+	"github.com/aid297/rbac/kernal/config"
+	"github.com/aid297/rbac/kernal/rbac/persist"
+	"github.com/aid297/rbac/kernal/rbac/policy"
 )
 
 func TestBasicAuthAndQuery(t *testing.T) {

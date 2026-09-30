@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/kernal/rbac/persist"
 )
 
 //go:embed page.html

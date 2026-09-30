@@ -9,7 +9,7 @@ let client = Client::new("http://localhost:8080")?;
 let allow = client.enforce("alice", "doc:42", CallOpts::default())?;
 ```
 
-要求：Rust **1.75+**（edition 2021）。crate 名 `rbac-sdk-rs`，库名 `rbac`。HTTP 与 gRPC 共用同一套方法；gRPC 依赖 `tonic` / `prost`（proto 已 vendored 在 `proto/`，`build.rs` 生成桩，无需兄弟目录 `server/`）。
+要求：Rust **1.75+**（edition 2021）。crate 名 `rbac-sdk-rs`，库名 `rbac`。HTTP 与 gRPC 共用同一套方法；gRPC 依赖 `tonic` / `prost`（proto 已 vendored 在 `proto/`，`build.rs` 生成桩，无需兄弟目录 `kernal/`）。
 
 ## 安装
 
@@ -422,7 +422,7 @@ cargo clippy -- -D warnings
 gRPC 桩已提交在 `src/pb/rbac.v1.rs`（对应 `proto/rbac/v1/rbac.proto`），工程无需 `protoc` 即可构建。在 monorepo 内同步服务端 proto 并重新生成：
 
 ```bash
-cp ../server/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
+cp ../kernal/api/proto/rbac/v1/rbac.proto proto/rbac/v1/rbac.proto
 make proto   # 需要 protoc
 ```
 

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package rbac.v1;
 
-option go_package = "github.com/aid297/rbac/server/api/gen/rbac/v1;rbacv1";
+option go_package = "github.com/aid297/rbac/kernal/api/gen/rbac/v1;rbacv1";
 
 import "google/protobuf/timestamp.proto";
 

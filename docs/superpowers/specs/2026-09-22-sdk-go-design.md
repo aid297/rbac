@@ -2,7 +2,7 @@
 
 - 日期：2026-09-22
 - 状态：**历史快照**（monorepo 与 sdk-go 已实现；**勿将正文当作当前仓库现状**）
-- 范围（撰写时）：① 将仓库重构为 monorepo（服务端收入 `server/`）；② 新建 `sdk-go` 项目。正文假设 v1 **仅 HTTP / HTTPS**。
+- 范围（撰写时）：① 将仓库重构为 monorepo（服务端收入 `kernal/`）；② 新建 `sdk-go` 项目。正文假设 v1 **仅 HTTP / HTTPS**。
 
 ## 文档勘误（阅读必读）
 
@@ -10,18 +10,19 @@
 
 | 主题 | 当前依据 |
 | --- | --- |
-| 公开 HTTP/gRPC 契约 | [`server/api/openapi.yaml`](../../../server/api/openapi.yaml)、[`server/api/proto/rbac/v1/rbac.proto`](../../../server/api/proto/rbac/v1/rbac.proto) |
+| 公开 HTTP/gRPC 契约 | [`kernal/api/openapi.yaml`](../../../kernal/api/openapi.yaml)、[`kernal/api/proto/rbac/v1/rbac.proto`](../../../kernal/api/proto/rbac/v1/rbac.proto) |
 | monorepo 变更检查表 | [`docs/INTEGRATION.md`](../../INTEGRATION.md) |
 | sdk-go 用法与 gRPC | [`sdk-go/README.md`](../../../sdk-go/README.md) |
 
 与**当前代码不一致**的常见表述（正文若出现，以代码与上表为准）：
 
-- 「待实现」→ sdk-go 及 `server/` monorepo **已完成**。
+- 「待实现」→ sdk-go 及 `kernal/` monorepo **已完成**。
 - 「非目标：gRPC / 服务端尚不支持 gRPC」→ 服务端与 **sdk-go / sdk-ts / sdk-rust / sdk-csharp** 均已支持 gRPC/gRPC+TLS。
 - 「零第三方依赖」→ sdk-go **依赖** `google.golang.org/grpc` 与 protobuf（HTTP 路径仍主要用标准库）。
-- 「无 OpenAPI / 不从 OpenAPI 生成」→ 已提供 [`server/api/openapi.yaml`](../../../server/api/openapi.yaml)；官方 SDK 仍为手写，其它语言可用生成器。
+- 「无 OpenAPI / 不从 OpenAPI 生成」→ 已提供 [`kernal/api/openapi.yaml`](../../../kernal/api/openapi.yaml)；官方 SDK 仍为手写，其它语言可用生成器。
 - monorepo 仅 `sdk-go` → 另有 **sdk-ts、sdk-rust、sdk-csharp**。
 - §9 未决「gRPC SDK 扩展」→ **已实现**。
+- 正文中的 `server/`、`httpsvc`、`grpcsvc` 布局 → 现为 **`kernal/`**、内核 **`kernal/rbac/`**、**`kernal/http-server`**、**`kernal/grpc-server`**（module `github.com/aid297/rbac/kernal`）；Go 程序也可直接 import `kernal/rbac/...` 跳过 SDK。
 
 仍大致有效的部分：HTTP 客户端形态（functional options、`*APIError`、`/v1` 端点范围、不包含 admin API）、SDK 不 import 服务端 module。
 
@@ -51,8 +52,8 @@ rbac 微服务当前对外暴露 HTTP / HTTPS 的 `/v1` REST API（无鉴权）�
 
 ```
 rbac/
-├── server/                 # 微服务（由仓库根迁入）
-│   ├── go.mod              # module github.com/aid297/rbac/server
+├── kernal/                 # 微服务（由仓库根迁入）
+│   ├── go.mod              # module github.com/aid297/rbac/kernal
 │   ├── go.sum
 │   ├── cmd/rbac/main.go
 │   ├── policy/ persist/ cache/ crypto/ config/ pki/ httpsvc/ adminui/
@@ -61,17 +62,17 @@ rbac/
 ├── sdk-go/                 # 新 SDK：module github.com/aid297/rbac/sdk-go
 ├── docs/superpowers/specs/ # 留在根：服务端与 SDK 的设计文档同置
 ├── LICENSE                 # 留在根
-├── README.md               # 新写：monorepo 概览，指向 server/ 与 sdk-go/
+├── README.md               # 新写：monorepo 概览，指向 kernal/ 与 sdk-go/
 └── .gitignore              # 留在根
 ```
 
 迁移步骤：
 
-1. 用 `git mv` 将服务端文件移入 `server/`（保留历史）：`go.mod`、`go.sum`、`cmd/`、`policy/`、`persist/`、`cache/`、`crypto/`、`config/`、`pki/`、`httpsvc/`、`adminui/`、`config.yaml`、`README.md`。
-2. 修改 `server/go.mod` 的 module 行：`rbac` → `github.com/aid297/rbac/server`。
-3. 重写服务端所有内部 import：`rbac/...` → `github.com/aid297/rbac/server/...`（含 `cmd/rbac/main.go` 与各包测试）。
-4. `docs/`、`LICENSE`、`.gitignore` 保持在根。`.gitignore` 中 `stats/`、`secret/` 这类无前导斜杠的模式天然递归匹配，迁移后仍能忽略 `server/stats/`、`server/secret/`；`/rbac` 等根级模式按需调整。
-5. 验证：在 `server/` 下 `go build ./...`、`go vet ./...`、`go test -race ./...` 全绿。
+1. 用 `git mv` 将服务端文件移入 `kernal/`（保留历史）：`go.mod`、`go.sum`、`cmd/`、`policy/`、`persist/`、`cache/`、`crypto/`、`config/`、`pki/`、`httpsvc/`、`adminui/`、`config.yaml`、`README.md`。
+2. 修改 `kernal/go.mod` 的 module 行：`rbac` → `github.com/aid297/rbac/kernal`。
+3. 重写服务端所有内部 import：`rbac/...` → `github.com/aid297/rbac/kernal/...`（含 `cmd/rbac/main.go` 与各包测试）。
+4. `docs/`、`LICENSE`、`.gitignore` 保持在根。`.gitignore` 中 `stats/`、`secret/` 这类无前导斜杠的模式天然递归匹配，迁移后仍能忽略 `kernal/stats/`、`kernal/secret/`；`/rbac` 等根级模式按需调整。
+5. 验证：在 `kernal/` 下 `go build ./...`、`go vet ./...`、`go test -race ./...` 全绿。
 
 两个 module 相互独立，SDK 不 import 服务端，故无需 `go.work`（且 `.gitignore` 已忽略 `go.work`）。
 
@@ -239,7 +240,7 @@ func IsBadRequest(err error) bool // 400
 
 ## 7. 测试策略
 
-仅用标准库 `testing`，表驱动，风格与 `server/policy` 一致。
+仅用标准库 `testing`，表驱动，风格与 `kernal/policy` 一致。
 
 - HTTP 路径：`httptest.NewServer` 起一个假服务端，按端点返回固定 JSON，断言 SDK 解析正确、请求方法/路径/query/body 符合预期。
 - 错误映射：分别让假服务端返回 400/404/409/503，断言对应 `Is*` 谓词为真、`*APIError` 字段正确。
@@ -256,7 +257,7 @@ func IsBadRequest(err error) bool // 400
 
 ## 8. 交付物
 
-1. 重构后的 `server/`（module 改名 + import 重写，构建与测试通过）。
+1. 重构后的 `kernal/`（module 改名 + import 重写，构建与测试通过）。
 2. `sdk-go/`：`go.mod`、`client.go`、`options.go`、`types.go`、`errors.go`、对应 `_test.go`、`README.md`。
 3. 根 `README.md`（monorepo 概览）。
 4. 本设计文档。
@@ -265,7 +266,7 @@ func IsBadRequest(err error) bool // 400
 
 已决：
 
-- 目录名 `server`；module 全路径化（`github.com/aid297/rbac/server`、`github.com/aid297/rbac/sdk-go`）。
+- 目录名 `server`；module 全路径化（`github.com/aid297/rbac/kernal`、`github.com/aid297/rbac/sdk-go`）。
 - SDK 独立、零第三方依赖、不 import 服务端。
 - v1 覆盖 `/v1` 全部端点（读 + 绑定 CRUD）。
 - TLS：CA 证书 / 自带 client / insecure 三种方式。

@@ -11,11 +11,11 @@ Both describe the same **public** surface: health, CA export, enforce/reachable,
 
 ## Stable URLs (GitHub raw)
 
-Replace `main` with a release tag (e.g. `server/v1.2.0`) to pin a contract version.
+Replace `main` with a release tag (e.g. `kernal/v1.2.0`) to pin a contract version.
 
 ```
-https://raw.githubusercontent.com/aid297/rbac/main/server/api/openapi.yaml
-https://raw.githubusercontent.com/aid297/rbac/main/server/api/proto/rbac/v1/rbac.proto
+https://raw.githubusercontent.com/aid297/rbac/main/kernal/api/openapi.yaml
+https://raw.githubusercontent.com/aid297/rbac/main/kernal/api/proto/rbac/v1/rbac.proto
 ```
 
 ## HTTP (OpenAPI)
@@ -41,8 +41,8 @@ openapi-generator-cli generate \
 ### Browse interactively
 
 ```bash
-npx --yes @redocly/cli preview-docs server/api/openapi.yaml
-# or: docker run -p 8080:8080 -e SWAGGER_JSON=/openapi.yaml -v "$PWD/server/api:/openapi" swaggerapi/swagger-ui
+npx --yes @redocly/cli preview-docs kernal/api/openapi.yaml
+# or: docker run -p 8080:8080 -e SWAGGER_JSON=/openapi.yaml -v "$PWD/kernal/api:/openapi" swaggerapi/swagger-ui
 ```
 
 ## gRPC (Protobuf)
@@ -54,16 +54,16 @@ Service: **`rbac.v1.RbacService`**. RPC names and HTTP routes are documented in 
 Requires `protoc` plus language plugins. Import path for well-known types:
 
 ```bash
-cd server/api
+cd kernal/api
 protoc -I proto \
   --python_out=/tmp/rbac_pb --grpc_python_out=/tmp/rbac_pb \
   proto/rbac/v1/rbac.proto
 ```
 
-Go (already generated in-repo for the server):
+Go (already generated in-repo under `kernal/api/gen`):
 
 ```bash
-cd server && make proto
+cd kernal && make proto
 ```
 
 ### Error semantics (gRPC)
@@ -87,7 +87,7 @@ Maintained in this monorepo (HTTP + gRPC, shared semantics):
 - [`sdk-rust`](../../sdk-rust/)
 - [`sdk-csharp`](../../sdk-csharp/)
 
-For other languages, prefer **OpenAPI → REST** and/or **proto → gRPC** from this directory. If generated behavior diverges (timeouts, pause detection, timestamp truncation to seconds), align with the official SDKs or the server implementation in `server/httpsvc` and `server/grpcsvc`.
+For other languages, prefer **OpenAPI → REST** and/or **proto → gRPC** from this directory. If generated behavior diverges (timeouts, pause detection, timestamp truncation to seconds), align with the official SDKs or the kernal implementation in `kernal/http-server` and `kernal/grpc-server`.
 
 Monorepo change checklist (openapi ↔ handlers ↔ proto ↔ SDKs): [`docs/INTEGRATION.md`](../../docs/INTEGRATION.md).
 

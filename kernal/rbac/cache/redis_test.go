@@ -7,7 +7,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
-	"github.com/aid297/rbac/server/persist"
+	"github.com/aid297/rbac/kernal/rbac/persist"
 )
 
 func TestRedisSetGetRoundTrip(t *testing.T) {
