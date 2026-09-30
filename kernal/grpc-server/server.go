@@ -79,7 +79,7 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 		if err != nil {
 			return fmt.Errorf("grpcserver: listen %s: %w", opt.Addr, err)
 		}
-		s := grpc.NewServer()
+		s := grpc.NewServer(grpcServerOptions()...)
 		rbacv1.RegisterRbacServiceServer(s, svc)
 		start(s, lis)
 	}
@@ -92,7 +92,7 @@ func Serve(ctx context.Context, store *persist.Store, opt Options) error {
 			return fmt.Errorf("grpcserver: listen TLS %s: %w", opt.TLSAddr, err)
 		}
 		creds := credentials.NewServerTLSFromCert(opt.TLSCert)
-		s := grpc.NewServer(grpc.Creds(creds))
+		s := grpc.NewServer(grpcServerOptions(grpc.Creds(creds))...)
 		rbacv1.RegisterRbacServiceServer(s, svc)
 		start(s, lis)
 	}

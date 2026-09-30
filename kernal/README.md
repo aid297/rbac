@@ -255,7 +255,7 @@ go test ./rbac/policy/... -cover
 | **部署拓扑** | **单进程**；`policy.rbac` 为**唯一事实来源**，Redis 仅为 sealed blob **副本**（可选），无内置选主或集群 | 高可用靠外部编排（单写者、共享存储、主备切换等）；避免多实例无协调共写同一文件 |
 | **规模** | 查询全在**内存**（COW 快照，读无锁）；v1 设计假设**万级边**、写低频 | 超大图受单机内存限制；`Reachable` **无分页**，返回完整集合，调用方需过滤或限流 |
 | **语义** | **`Enforce(x, x)` 恒为 `true`**（自环视为允许） | 若产品要禁止「访问自身」，在业务或网关层额外判断 |
-| **可观测性** | 结构化日志（zap）；**无内置 metrics / 分布式追踪** | 生产可接 Prometheus、OpenTelemetry 等（需自行埋点或 sidecar） |
+| **可观测性** | 结构化日志（zap）：启动摘要、`persist` 暂停/reconcile/落盘失败、HTTP 5xx/503、gRPC Internal/暂停；**无 metrics / trace** | 库模式需 `persist.SetLogger(logging.FromZap(l))`； metrics 可外接 Prometheus |
 | **构建产物** | 模块内库路径为 **`kernal/rbac/`** | 构建二进制请用 **`-o rbac-server`**（或其它非 `rbac` 名），勿 `go build -o rbac` 与库目录冲突 |
 
 **代码侧相对成熟的部分**：分层清晰（[`rbac/`](rbac/README.md) 内核 vs `http-server` / `grpc-server`）、写路径原子落盘、可选加密与 reconcile 失败时**暂停 API**、公开契约（openapi + proto）与官方 SDK 对齐。主要风险在**部署形态与威胁模型**，而非单测覆盖的每一层（例如 `cmd/rbac` 入口、`logging` 多无单测，属常见情况；传输层无单独 superpowers spec，以契约与 [`docs/INTEGRATION.md`](../docs/INTEGRATION.md) 为准）。

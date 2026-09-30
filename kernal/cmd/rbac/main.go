@@ -42,6 +42,11 @@ func main() {
 	}
 	defer func() { _ = logger.Sync() }()
 
+	svcLog := logging.FromZap(logger)
+	persist.SetLogger(svcLog)
+	httpserver.SetLogger(svcLog)
+	grpcserver.SetLogger(svcLog)
+
 	alg, err := cfg.Algorithm()
 	if err != nil {
 		logger.Fatal("algorithm lookup failed", zap.Error(err))

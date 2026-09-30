@@ -38,7 +38,9 @@ func (s *Store) asyncLoop() {
 func (s *Store) flushFile() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		logError("async policy flush failed", "path", s.path, "error", err)
+	}
 }
 
 // Flush writes the current snapshot to disk immediately.

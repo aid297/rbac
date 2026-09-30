@@ -140,6 +140,7 @@ func (s *Store) mutate(fn func() error) error {
 	}
 	if s.cache != nil {
 		if err := s.cacheSetLocked(); err != nil {
+			logError("policy cache update failed", "path", s.path, "error", err)
 			_ = s.eng.Load(prev)
 			return err
 		}
@@ -147,6 +148,7 @@ func (s *Store) mutate(fn func() error) error {
 		return nil
 	}
 	if err := s.saveLocked(); err != nil {
+		logError("policy save failed", "path", s.path, "error", err)
 		_ = s.loadLocked()
 		return err
 	}
@@ -168,6 +170,7 @@ func (s *Store) loadLocked() error {
 	}
 	eng := policy.NewEngine()
 	if err := eng.Load(string(plain)); err != nil {
+		logError("policy load failed", "path", s.path, "error", err)
 		return fmt.Errorf("persist: load %s: %w", s.path, err)
 	}
 	s.eng = eng

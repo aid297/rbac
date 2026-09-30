@@ -10,6 +10,14 @@
 
 Module：`github.com/aid297/rbac/kernal`（Go 1.27+）。只用到内核时，在业务 `go.mod` 里：
 
+进程内使用 `persist` 时建议注入日志（否则暂停、落盘失败等只在 error 返回值里，**不会**写文件）：
+
+```go
+import "github.com/aid297/rbac/kernal/logging"
+
+persist.SetLogger(logging.FromZap(yourZapLogger)) // 或实现 logging.Logger 的适配器
+```
+
 ```bash
 go get github.com/aid297/rbac/kernal
 ```

@@ -48,6 +48,7 @@ func requestPause(reason string) {
 	pauseWhy = reason
 	ctl := serviceCtl
 	ctlMu.Unlock()
+	logWarn("service paused", "reason", reason)
 	if ctl != nil {
 		_ = ctl.Pause(reason)
 	}
@@ -55,10 +56,14 @@ func requestPause(reason string) {
 
 func requestResume() {
 	ctlMu.Lock()
-	paused = false
+	was := paused
 	pauseWhy = ""
+	paused = false
 	ctl := serviceCtl
 	ctlMu.Unlock()
+	if was {
+		logInfo("service resumed")
+	}
 	if ctl != nil {
 		_ = ctl.Resume()
 	}
@@ -146,28 +151,36 @@ func (s *Store) Reconcile() error {
 	}
 	need, reason, err := s.diskMismatch(data)
 	if err != nil {
+		logError("reconcile failed", "path", s.path, "error", err)
 		requestPause(err.Error())
 		return err
 	}
 	if !need {
+		logInfo("reconcile ok", "path", s.path)
 		return nil
 	}
+	logWarn("reconcile migrating policy file", "path", s.path, "reason", reason)
 	requestPause(reason)
 	if err := s.saveLocked(); err != nil {
+		logError("reconcile save failed", "path", s.path, "error", err)
 		return err
 	}
 	if err := s.loadLocked(); err != nil {
+		logError("reconcile reload failed", "path", s.path, "error", err)
 		return err
 	}
 	if err := s.cacheSetLocked(); err != nil {
+		logError("reconcile cache sync failed", "path", s.path, "error", err)
 		return err
 	}
 	requestResume()
+	logInfo("reconcile migration completed", "path", s.path, "reason", reason)
 	return nil
 }
 
 // Reconfigure applies new crypto settings to the in-memory snapshot and rewrites disk.
 func (s *Store) Reconfigure(alg crypto.Algorithm, key []byte) error {
+	logWarn("crypto reconfigure started", "path", s.path, "algorithm", algName(alg))
 	requestPause("crypto reconfigure")
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -175,14 +188,25 @@ func (s *Store) Reconfigure(alg crypto.Algorithm, key []byte) error {
 	s.cipher = alg
 	s.key = append([]byte(nil), key...)
 	if err := s.saveLocked(); err != nil {
+		logError("crypto reconfigure save failed", "path", s.path, "error", err)
 		return err
 	}
 	if err := s.loadLocked(); err != nil {
+		logError("crypto reconfigure reload failed", "path", s.path, "error", err)
 		return err
 	}
 	if err := s.cacheSetLocked(); err != nil {
+		logError("crypto reconfigure cache sync failed", "path", s.path, "error", err)
 		return err
 	}
 	requestResume()
+	logInfo("crypto reconfigure completed", "path", s.path, "algorithm", algName(alg))
 	return nil
+}
+
+func algName(alg crypto.Algorithm) string {
+	if alg == nil {
+		return "none"
+	}
+	return alg.Name()
 }

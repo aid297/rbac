@@ -34,6 +34,7 @@ func NewEngine(store *persist.Store, caCertPEM []byte) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	e := gin.New()
 	e.Use(gin.Recovery())
+	e.Use(requestLogMiddleware())
 	MountAPI(e, store, caCertPEM)
 	return e
 }
